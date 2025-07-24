@@ -8,5 +8,5 @@ public class Main {
 
         StringTokenizer st = new StringTokenizer(br.readLine());
         System.out.println(Integer.parseInt(st.nextToken()) - Integer.parseInt(st.nextToken()));               
-    }             
+    }              
 }     
