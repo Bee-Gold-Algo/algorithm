@@ -156,7 +156,7 @@ jobs:
                       "short": true
                     }
                   ],
-                  "text": "✅ 샘플 테스트 통과\n🤖 AI 생성 반례 테스트 통과\n📊 README.md 자동 업데이트\n🚀 자동 병합 예정"
+                  "text": "✅ 샘플 테스트 통과\n🤖 AI 생성 반례 테스트 통과\n📊 README.md 자동 업데이트\n👥 수동 병합 대기 중"
                 }
               ]
             }'
@@ -202,14 +202,7 @@ jobs:
               ]
             }'
 
-      # 14. 테스트 통과 시 자동 병합 (선택사항)
-      - name: Auto-merge on success
-        if: steps.run-tests.outputs.result == 'PASS'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch
-
-      # 15. PR에 테스트 결과 댓글 작성
+      # 14. PR에 테스트 결과 댓글 작성
       - name: Comment test results
         if: always()
         uses: actions/github-script@v6
@@ -229,7 +222,7 @@ jobs:
 
             let body;
             if (result === 'PASS') {
-              body = `## ✅ 테스트 통과!\n🎉 **${author}**님의 문제 **${problem_id}** 해결을 축하합니다!\n- 📊 README.md가 자동으로 업데이트되었습니다.\n\n자동으로 병합됩니다! 🚀`;
+              body = `## ✅ 테스트 통과!\n🎉 **${author}**님의 문제 **${problem_id}** 해결을 축하합니다!\n- ✅ 샘플 테스트: 통과\n- 🤖 AI 생성 반례 테스트: 통과\n- 📊 README.md가 자동으로 업데이트되었습니다.\n\n수동으로 병합해주세요! 🚀`;
             } else {
               body = `## ❌ 테스트 실패\n**${author}**님의 문제 **${problem_id}** 코드에서 문제가 발견되었습니다:\n\`\`\`\n${details}\n\`\`\`\n코드를 수정한 후 다시 푸시해주세요! 💪`;
             }
