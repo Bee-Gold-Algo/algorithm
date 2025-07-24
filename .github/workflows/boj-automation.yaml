@@ -17,33 +17,10 @@ jobs:
 
     # 작업에 필요한 권한 설정
     permissions:
-      contents: write        # README.md 업데이트 및 커밋/푸시를 위해 필요
-      pull-requests: write   # PR에 테스트 결과 댓글을 작성하기 위해 필요
+      contents: write      # README.md 업데이트 및 커밋/푸시를 위해 필요
+      pull-requests: write # PR에 테스트 결과 댓글을 작성하기 위해 필요
 
     steps:
-      - name: Debug Secrets
-        run: |
-          echo "=== 시크릿 디버깅 ==="
-          echo "GEMINI_API_KEY 길이: ${#GEMINI_API_KEY}"
-          echo "MATTERMOST_WEBHOOK_URL 길이: ${#MATTERMOST_WEBHOOK_URL}"
-          echo "GITHUB_TOKEN 길이: ${#GITHUB_TOKEN}"
-          
-          # 각 시크릿별 상태 확인
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "❌ GEMINI_API_KEY: EMPTY"
-          else
-            echo "✅ GEMINI_API_KEY: EXISTS (length: ${#GEMINI_API_KEY})"
-          fi
-          
-          if [ -z "$MATTERMOST_WEBHOOK_URL" ]; then
-            echo "❌ MATTERMOST_WEBHOOK_URL: EMPTY" 
-          else
-            echo "✅ MATTERMOST_WEBHOOK_URL: EXISTS (length: ${#MATTERMOST_WEBHOOK_URL})"
-          fi
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
-
       # 1. 코드 체크아웃
       # PR 브랜치 자체를 가져와 'Detached HEAD' 문제를 해결합니다.
       - name: Checkout PR Branch
@@ -151,33 +128,31 @@ jobs:
             echo "README.md에 변경사항이 없어 커밋하지 않습니다."
           fi
 
-      # 12. 테스트 통과 시 Mattermost 알림 전송
+      # 12. 테스트 통과 시 Mattermost 알림 전송 (수정된 부분)
       - name: Send Mattermost notification on success
         if: steps.run-tests.outputs.result == 'PASS'
         run: |
-          curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"channel\": \"algorithm-study\",
-              \"username\": \"BOJ-Bot\",
-              \"icon_emoji\": \":white_check_mark:\",
-              \"text\": \"🎉 **Tests Passed!** Problem: ${{ steps.extract-info.outputs.problem_id }} | Solver: ${{ steps.extract-info.outputs.author }} | Language: ${{ steps.extract-info.outputs.language }} | [PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}) ✅ All tests passed, README updated, ready for merge!\"
-            }" \
-            --silent --show-error --fail
+          curl -X POST -H 'Content-Type: application/json' \
+          -d '{
+                "channel": "algorithm-study",
+                "username": "BOJ-Bot",
+                "icon_emoji": ":white_check_mark:",
+                "text": "🎉 **Tests Passed!** Problem: ${{ steps.extract-info.outputs.problem_id }} | Solver: ${{ steps.extract-info.outputs.author }} | Language: ${{ steps.extract-info.outputs.language }} | [PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}) ✅ All tests passed, README updated, ready for merge!"
+              }' \
+          "${{ secrets.MATTERMOST_WEBHOOK_URL }}" --silent --show-error --fail
 
-      # 13. 테스트 실패 시 Mattermost 알림 전송
+      # 13. 테스트 실패 시 Mattermost 알림 전송 (수정된 부분)
       - name: Send Mattermost notification on failure
         if: steps.run-tests.outputs.result == 'FAIL'
         run: |
-          curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"channel\": \"algorithm-study\",
-              \"username\": \"BOJ-Bot\",
-              \"icon_emoji\": \":x:\",
-              \"text\": \"❌ **Tests Failed** Problem: ${{ steps.extract-info.outputs.problem_id }} | Submitter: ${{ steps.extract-info.outputs.author }} | [PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}) 💪 Please fix and push again!\"
-            }" \
-            --silent --show-error --fail
+          curl -X POST -H 'Content-Type: application/json' \
+          -d '{
+                "channel": "algorithm-study",
+                "username": "BOJ-Bot",
+                "icon_emoji": ":x:",
+                "text": "❌ **Tests Failed** Problem: ${{ steps.extract-info.outputs.problem_id }} | Submitter: ${{ steps.extract-info.outputs.author }} | [PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}) 💪 Please fix and push again!"
+              }' \
+          "${{ secrets.MATTERMOST_WEBHOOK_URL }}" --silent --show-error --fail
 
       # 14. PR에 테스트 결과 댓글 작성
       - name: Comment test results
