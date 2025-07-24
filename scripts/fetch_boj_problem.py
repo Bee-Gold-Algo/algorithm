@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 scripts/fetch_boj_problem.py
-백준에서 문제 정보를 수집합니다. (Selenium 최적화 버전)
+백준에서 문제 정보를 수집합니다. (재시도 로직 포함 Selenium 최적화 버전)
 이미지에서 확인된 HTML 구조에 맞춰 정확한 스크래핑
 """
 
@@ -191,8 +191,65 @@ def extract_problem_info_from_html(html_content):
     return problem_info
 
 def scrape_boj_optimized(problem_id):
-    """최적화된 Selenium 스크래핑"""
-    print("  → 최적화된 Selenium 스크래핑 시작...")
+    """최적화된 Selenium 스크래핑 (단일 시도)"""
+    print("    → Selenium 스크래핑 시작...")
+
+    driver = setup_optimized_chrome_driver()
+    if not driver:
+        print("    ❌ Chrome Driver 설정 실패")
+        return None
+
+    try:
+        url = f"https://www.acmicpc.net/problem/{problem_id}"
+        print(f"    → 접속 중: {url}")
+        
+        # 페이지 로드
+        driver.get(url)
+
+        # problem-body가 로드될 때까지 대기
+        try:
+            WebDriverWait(driver, 30).until(  # 60초 → 30초로 단축
+                EC.presence_of_element_located((By.ID, "problem-body"))
+            )
+            print("    ✅ 페이지 로드 완료")
+        except:
+            print("    ⚠️ problem-body 요소를 찾지 못했습니다. 일반적인 방법으로 진행...")
+        
+        # 추가 로딩 대기 (단축)
+        time.sleep(3)  # 5초 → 3초로 단축
+
+        # HTML 소스 가져오기
+        html_content = driver.page_source
+        
+        # 페이지 응답 확인
+        if "존재하지 않는 문제" in html_content or len(html_content) < 1000:
+            print("    ❌ 유효하지 않은 페이지 응답")
+            return None
+        
+        # 문제 정보 추출
+        problem_info = extract_problem_info_from_html(html_content)
+        
+        if problem_info and len(problem_info.get('samples', [])) > 0:
+            print(f"    ✅ 스크래핑 성공! (샘플 {len(problem_info['samples'])}개)")
+            return problem_info
+        else:
+            print("    ⚠️ 문제 정보를 찾지 못했습니다.")
+            return None
+        
+    except Exception as e:
+        print(f"    ❌ 스크래핑 중 오류: {str(e)[:100]}...")
+        return None
+    finally:
+        if driver:
+            try:
+                driver.quit()
+                print("    🔧 Chrome Driver 종료")
+            except:
+                pass
+
+def scrape_boj_with_strategy(problem_id, strategy):
+    """특정 전략으로 스크래핑"""
+    print(f"    → 전략적 스크래핑 시작 (타임아웃: {strategy['timeout']}초)")
 
     driver = setup_optimized_chrome_driver()
     if not driver:
@@ -200,22 +257,22 @@ def scrape_boj_optimized(problem_id):
 
     try:
         url = f"https://www.acmicpc.net/problem/{problem_id}"
-        print(f"  → 접속 중: {url}")
+        print(f"    → 접속 중: {url}")
         
         # 페이지 로드
         driver.get(url)
 
-        # problem-body가 로드될 때까지 대기 (이미지에서 확인된 구조)
+        # 전략에 따른 대기
         try:
-            WebDriverWait(driver, 60).until(
+            WebDriverWait(driver, strategy['timeout']).until(
                 EC.presence_of_element_located((By.ID, "problem-body"))
             )
-            print("  ✅ 페이지 로드 완료")
+            print("    ✅ 페이지 로드 완료")
         except:
-            print("  ⚠️ problem-body 요소를 찾지 못했습니다. 일반적인 방법으로 진행...")
+            print("    ⚠️ 타임아웃, 일반적인 방법으로 진행...")
         
-        # 추가 로딩 대기
-        time.sleep(5)
+        # 전략에 따른 추가 대기
+        time.sleep(strategy['extra_wait'])
 
         # HTML 소스 가져오기
         html_content = driver.page_source
@@ -224,14 +281,14 @@ def scrape_boj_optimized(problem_id):
         problem_info = extract_problem_info_from_html(html_content)
         
         if problem_info and len(problem_info.get('samples', [])) > 0:
-            print(f"  ✅ 스크래핑 성공!")
+            print(f"    ✅ 전략적 스크래핑 성공!")
             return problem_info
         else:
-            print("  ⚠️ 문제 정보를 찾지 못했습니다.")
+            print("    ⚠️ 전략적 스크래핑 실패")
             return None
         
     except Exception as e:
-        print(f"  ❌ 스크래핑 중 오류: {str(e)[:100]}...")
+        print(f"    ❌ 전략적 스크래핑 중 오류: {str(e)[:50]}...")
         return None
     finally:
         if driver:
@@ -240,62 +297,74 @@ def scrape_boj_optimized(problem_id):
             except:
                 pass
 
-def get_comprehensive_fallback_samples(problem_id):
-    """확장된 fallback 샘플 데이터"""
-    samples_db = {
-        # 기본 입출력
-        "1000": [{"input": "1 2", "output": "3"}],
-        "2557": [{"input": "", "output": "Hello World!"}],
-        "1001": [{"input": "5 4", "output": "1"}],
-        "10998": [{"input": "3 4", "output": "12"}],
-        "1008": [{"input": "1 3", "output": "0.3333333333333333"}],
-        "10869": [{"input": "7 3", "output": "10\n4\n21\n2\n1"}],
-        
-        # 조건문
-        "1330": [{"input": "1 2", "output": "<"}],
-        "9498": [{"input": "100", "output": "A"}],
-        "2753": [{"input": "2000", "output": "1"}],
-        "14681": [{"input": "12\n5", "output": "1"}],
-        "2884": [{"input": "10 10", "output": "9 50"}],
-        
-        # 반복문
-        "2739": [{"input": "2", "output": "2 * 1 = 2\n2 * 2 = 4\n2 * 3 = 6\n2 * 4 = 8\n2 * 5 = 10\n2 * 6 = 12\n2 * 7 = 14\n2 * 8 = 16\n2 * 9 = 18"}],
-        "10950": [{"input": "5\n1 1\n2 3\n3 4\n9 8\n5 2", "output": "2\n5\n7\n17\n7"}],
-        "2741": [{"input": "3", "output": "1\n2\n3"}],
-        "2742": [{"input": "3", "output": "3\n2\n1"}],
-        "11021": [{"input": "5\n1 1\n2 3\n3 4\n9 8\n5 2", "output": "Case #1: 2\nCase #2: 5\nCase #3: 7\nCase #4: 17\nCase #5: 7"}],
-        
-        # 배열
-        "10818": [{"input": "5\n20 10 35 30 7", "output": "7 35"}],
-        "2562": [{"input": "3\n29\n38\n12\n57\n74\n40\n85\n61", "output": "85\n7"}],
-        "3052": [{"input": "1\n2\n3\n4\n5\n6\n7\n8\n9\n0", "output": "10"}],
-        
-        # 문자열
-        "11654": [{"input": "A", "output": "65"}],
-        "11720": [{"input": "5\n54321", "output": "15"}],
-        "10809": [{"input": "baekjoon", "output": "1 0 -1 -1 2 -1 -1 -1 -1 4 3 -1 -1 7 5 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1"}],
-        
-        # 그래프 출력
-        "10171": [{"input": "", "output": "\\    /\\\n )  ( ')\n(  /  )\n \\(__)|"}],
-        "10172": [{"input": "", "output": "|\\_/|\n|q p|   /}\n( 0 )\"\"\"\\\n|\"^\"`    |\n||_/=\\\\__|"}],
-        
-        # 수학
-        "1712": [{"input": "1000 70 170", "output": "11"}],
-        "2292": [{"input": "13", "output": "3"}],
-        "1193": [{"input": "14", "output": "2/4"}],
-        "2869": [{"input": "2 1 5", "output": "4"}],
-        
-        # 재귀
-        "10872": [{"input": "10", "output": "3628800"}],
-        "10870": [{"input": "10", "output": "55"}],
-        "2447": [{"input": "3", "output": "***\n* *\n***"}]
-    }
+def scrape_boj_with_retry(problem_id, max_attempts=3, initial_delay=5):
+    """여러 번 시도하는 백준 스크래핑 함수"""
+    print(f"  🔄 백준 스크래핑 시작 (최대 {max_attempts}회 시도)")
     
-    return samples_db.get(str(problem_id), [{"input": "Sample input", "output": "Sample output"}])
+    for attempt in range(1, max_attempts + 1):
+        print(f"\n  📍 시도 {attempt}/{max_attempts}")
+        
+        # 재시도 간격 (점진적 증가)
+        if attempt > 1:
+            delay = initial_delay * (attempt - 1)
+            print(f"  ⏳ {delay}초 대기 중...")
+            time.sleep(delay)
+        
+        # 스크래핑 시도
+        result = scrape_boj_optimized(problem_id)
+        
+        if result and len(result.get('samples', [])) > 0:
+            print(f"  🎉 {attempt}번째 시도에서 성공!")
+            return result
+        else:
+            if attempt < max_attempts:
+                print(f"  ❌ {attempt}번째 시도 실패, 재시도 준비...")
+            else:
+                print(f"  💥 모든 시도 실패 ({max_attempts}회)")
+    
+    return None
+
+def scrape_boj_aggressive_retry(problem_id, max_attempts=5):
+    """더 적극적인 재시도 전략"""
+    print(f"  🚀 적극적 스크래핑 모드 (최대 {max_attempts}회 시도)")
+    
+    # 다양한 대기 시간과 설정으로 시도
+    strategies = [
+        {"delay": 3, "timeout": 20, "extra_wait": 2},   # 빠른 시도
+        {"delay": 5, "timeout": 30, "extra_wait": 3},   # 기본 시도  
+        {"delay": 8, "timeout": 45, "extra_wait": 5},   # 느린 시도
+        {"delay": 12, "timeout": 60, "extra_wait": 8},  # 매우 느린 시도
+        {"delay": 15, "timeout": 90, "extra_wait": 10}, # 초느린 시도
+    ]
+    
+    for attempt in range(1, min(max_attempts + 1, len(strategies) + 1)):
+        strategy = strategies[attempt - 1]
+        print(f"\n  📍 시도 {attempt}/{max_attempts} (전략: {strategy['timeout']}초 타임아웃)")
+        
+        # 재시도 간격
+        if attempt > 1:
+            print(f"  ⏳ {strategy['delay']}초 대기 중...")
+            time.sleep(strategy['delay'])
+        
+        # 맞춤형 스크래핑 시도
+        result = scrape_boj_with_strategy(problem_id, strategy)
+        
+        if result and len(result.get('samples', [])) > 0:
+            print(f"  🎉 {attempt}번째 시도에서 성공!")
+            return result
+        else:
+            if attempt < max_attempts:
+                print(f"  ❌ {attempt}번째 시도 실패, 다른 전략으로 재시도...")
+            else:
+                print(f"  💥 모든 전략 실패 ({max_attempts}회)")
+    
+    return None
 
 def main():
-    parser = argparse.ArgumentParser(description='백준 문제 정보 수집 (최적화된 Selenium)')
+    parser = argparse.ArgumentParser(description='백준 문제 정보 수집 (재시도 로직 포함)')
     parser.add_argument('--problem-id', required=True, help='백준 문제 번호')
+    parser.add_argument('--retry-mode', choices=['basic', 'aggressive'], default='basic', 
+                       help='재시도 모드 (basic: 3회, aggressive: 5회)')
     args = parser.parse_args()
     
     problem_id = args.problem_id
@@ -306,23 +375,28 @@ def main():
     print("  → solved.ac API 호출...")
     solved_ac_info = get_solved_ac_info(problem_id)
     
-    # 2. 최적화된 Selenium 스크래핑 시도
-    boj_info = scrape_boj_optimized(problem_id)
+    # 2. 재시도 모드에 따른 스크래핑
+    if args.retry_mode == 'aggressive':
+        boj_info = scrape_boj_aggressive_retry(problem_id, max_attempts=5)
+    else:
+        boj_info = scrape_boj_with_retry(problem_id, max_attempts=3)
     
-    # 3. 실패 시 fallback 데이터 사용
+    # 3. 스크래핑 실패 시 처리
     if not boj_info:
-        print("  → 스크래핑 실패, fallback 데이터 사용...")
+        print("\n  ❌ 모든 스크래핑 시도 실패")
+        print("  💡 문제 정보를 수동으로 확인해주세요:")
+        print(f"     https://www.acmicpc.net/problem/{problem_id}")
         
-        fallback_samples = get_comprehensive_fallback_samples(problem_id)
+        # 최소한의 구조만 제공 (빈 샘플)
         boj_info = {
-            "description": f"문제 {problem_id}의 상세 설명입니다. https://www.acmicpc.net/problem/{problem_id} 에서 확인하세요.",
-            "input_format": "입력 형식을 확인하세요.",
-            "output_format": "출력 형식을 확인하세요.",
-            "limits": "시간/메모리 제한을 확인하세요.",
+            "description": f"문제 {problem_id}의 상세 설명을 확인할 수 없습니다. 링크에서 직접 확인하세요.",
+            "input_format": "입력 형식을 직접 확인하세요.",
+            "output_format": "출력 형식을 직접 확인하세요.",
+            "limits": "시간/메모리 제한을 직접 확인하세요.",
             "hint": "",
-            "samples": fallback_samples
+            "samples": []  # 빈 샘플 리스트
         }
-        print(f"  ✅ fallback 샘플 {len(fallback_samples)}개 사용")
+        print(f"  ⚠️ 빈 샘플 데이터로 진행합니다.")
     
     # 4. 최종 정보 조합
     complete_info = {
@@ -345,12 +419,20 @@ def main():
         
         with open('sample_tests.json', 'w', encoding='utf-8') as f:
             json.dump(sample_tests, f, ensure_ascii=False, indent=2)
-            
-        print(f"\n✅ 문제 정보 수집 완료:")
-        print(f"  - 제목: {complete_info['title']} (Level: {complete_info['level']})")
-        print(f"  - 태그: {', '.join(complete_info['tags']) if complete_info['tags'] else 'N/A'}")
-        print(f"  - 샘플 테스트: {len(complete_info['samples'])}개")
-        print(f"  - 파일: problem_info.json, sample_tests.json")
+        
+        if len(complete_info['samples']) > 0:
+            print(f"\n✅ 문제 정보 수집 완료:")
+            print(f"  - 제목: {complete_info['title']} (Level: {complete_info['level']})")
+            print(f"  - 태그: {', '.join(complete_info['tags']) if complete_info['tags'] else 'N/A'}")
+            print(f"  - 샘플 테스트: {len(complete_info['samples'])}개")
+            print(f"  - 파일: problem_info.json, sample_tests.json")
+        else:
+            print(f"\n⚠️ 문제 정보 수집 부분적 완료:")
+            print(f"  - 제목: {complete_info['title']} (Level: {complete_info['level']})")
+            print(f"  - 태그: {', '.join(complete_info['tags']) if complete_info['tags'] else 'N/A'}")
+            print(f"  - 샘플 테스트: 0개 (스크래핑 실패)")
+            print(f"  - 파일: problem_info.json, sample_tests.json")
+            print(f"  ⚠️ 주의: 샘플 테스트가 없어 다음 단계에서 문제가 발생할 수 있습니다.")
 
     except IOError as e:
         print(f"\n❌ 파일 저장 오류: {e}")
