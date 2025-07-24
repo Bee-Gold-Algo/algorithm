@@ -126,40 +126,40 @@ jobs:
         run: |
           curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "channel": "algorithm-study",
-              "username": "BOJ-Bot",
-              "icon_emoji": ":white_check_mark:",
-              "text": "🎉 **테스트 통과!**",
-              "attachments": [
-                {
-                  "color": "good",
-                  "fields": [
-                    {
-                      "title": "문제 번호",
-                      "value": "${{ steps.extract-info.outputs.problem_id }}",
-                      "short": true
-                    },
-                    {
-                      "title": "해결자",
-                      "value": "${{ steps.extract-info.outputs.author }}",
-                      "short": true
-                    },
-                    {
-                      "title": "언어",
-                      "value": "${{ steps.extract-info.outputs.language }}",
-                      "short": true
-                    },
-                    {
-                      "title": "PR 링크",
-                      "value": "[PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})",
-                      "short": true
-                    }
-                  ],
-                  "text": "✅ 샘플 테스트 통과\n🤖 AI 생성 반례 테스트 통과\n📊 README.md 자동 업데이트\n👥 수동 병합 대기 중"
-                }
-              ]
-            }'
+            -d "{\"payload\": {
+                          \"channel\": \"algorithm-study\",
+                          \"username\": \"BOJ-Bot\",
+                          \"icon_emoji\": \":white_check_mark:\",
+                          \"text\": \"🎉 **테스트 통과!**\",
+                          \"attachments\": [
+                            {
+                              \"color\": \"good\",
+                              \"fields\": [
+                                {
+                                  \"title\": \"문제 번호\",
+                                  \"value\": \"${{ steps.extract-info.outputs.problem_id }}\",
+                                  \"short\": true
+                                },
+                                {
+                                  \"title\": \"해결자\",
+                                  \"value\": \"${{ steps.extract-info.outputs.author }}\",
+                                  \"short\": true
+                                },
+                                {
+                                  \"title\": \"언어\",
+                                  \"value\": \"${{ steps.extract-info.outputs.language }}\",
+                                  \"short\": true
+                                },
+                                {
+                                  \"title\": \"PR 링크\",
+                                  \"value\": \"[PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})\",
+                                  \"short\": true
+                                }
+                              ],
+                              \"text\": \"✅ 샘플 테스트 통과\\n🤖 AI 생성 반례 테스트 통과\\n📊 README.md 자동 업데이트\\n👥 수동 병합 대기 중\"
+                            }
+                          ]
+                        }}"
 
       # 13. 테스트 실패 시 Mattermost 알림 전송
       - name: Send Mattermost notification on failure
@@ -167,40 +167,40 @@ jobs:
         run: |
           curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "channel": "algorithm-study",
-              "username": "BOJ-Bot",
-              "icon_emoji": ":x:",
-              "text": "❌ **테스트 실패**",
-              "attachments": [
+            -d "{\"payload\": {
+              \"channel\": \"algorithm-study\",
+              \"username\": \"BOJ-Bot\",
+              \"icon_emoji\": \":x:\",
+              \"text\": \"❌ **테스트 실패**\",
+              \"attachments\": [
                 {
-                  "color": "danger",
-                  "fields": [
+                  \"color\": \"danger\",
+                  \"fields\": [
                     {
-                      "title": "문제 번호",
-                      "value": "${{ steps.extract-info.outputs.problem_id }}",
-                      "short": true
+                      \"title\": \"문제 번호\",
+                      \"value\": \"${{ steps.extract-info.outputs.problem_id }}\",
+                      \"short\": true
                     },
                     {
-                      "title": "제출자",
-                      "value": "${{ steps.extract-info.outputs.author }}",
-                      "short": true
+                      \"title\": \"제출자\",
+                      \"value\": \"${{ steps.extract-info.outputs.author }}\",
+                      \"short\": true
                     },
                     {
-                      "title": "언어",
-                      "value": "${{ steps.extract-info.outputs.language }}",
-                      "short": true
+                      \"title\": \"언어\",
+                      \"value\": \"${{ steps.extract-info.outputs.language }}\",
+                      \"short\": true
                     },
                     {
-                      "title": "PR 링크",
-                      "value": "[PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})",
-                      "short": true
+                      \"title\": \"PR 링크\",
+                      \"value\": \"[PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})\",
+                      \"short\": true
                     }
                   ],
-                  "text": "```\n${{ steps.run-tests.outputs.details }}\n```\n💪 코드를 수정한 후 다시 푸시해주세요!"
+                  \"text\": \"\`\`\`\\n${DETAILS}\\n\`\`\`\\n💪 코드를 수정한 후 다시 푸시해주세요!\"
                 }
               ]
-            }'
+            }}"
 
       # 14. PR에 테스트 결과 댓글 작성
       - name: Comment test results
@@ -222,7 +222,7 @@ jobs:
 
             let body;
             if (result === 'PASS') {
-              body = `## ✅ 테스트 통과!\n🎉 **${author}**님의 문제 **${problem_id}** 해결을 축하합니다!\n- ✅ 샘플 테스트: 통과\n- 🤖 AI 생성 반례 테스트: 통과\n- 📊 README.md가 자동으로 업데이트되었습니다.\n\n수동으로 병합해주세요! 🚀`;
+              body = `## ✅ 테스트 통과!\n🎉 **${author}**님의 문제 **${problem_id}** 해결을 축하합니다!\n- ✅ 샘플 테스트: 통과\n- 🤖 AI 생성 반례 테스트: 통과\n- 📊 README.md가 자동으로 업데이트되었습니다.\n\n브랜치 병합하고 삭제해주세요! 🚀`;
             } else {
               body = `## ❌ 테스트 실패\n**${author}**님의 문제 **${problem_id}** 코드에서 문제가 발견되었습니다:\n\`\`\`\n${details}\n\`\`\`\n코드를 수정한 후 다시 푸시해주세요! 💪`;
             }
