@@ -77,8 +77,7 @@ jobs:
         if: steps.check-validity.outputs.skip_tests == 'false'
         run: |
           python scripts/fetch_boj_problem.py \
-            --problem-id ${{ steps.extract-info.outputs.problem_id }} \
-            --retry-mode aggressive
+            --problem-id ${{ steps.extract-info.outputs.problem_id }}
 
       # 8. Gemini API로 반례 테스트케이스 생성
       - name: Generate test cases with Gemini
