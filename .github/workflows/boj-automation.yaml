@@ -44,7 +44,7 @@ jobs:
 
       # 4. Python 의존성 설치
       - name: Install dependencies
-        run: pip install requests beautifulsoup4 google-generativeai pytz
+        run: pip install google-generativeai pytz selenium webdriver-manager beautifulsoup4 requests
 
       # 5. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
       - name: Extract problem and code info
