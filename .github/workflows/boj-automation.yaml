@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "0 */2 * * *"
+    - cron: "* * * * *"
 
 # 실행될 작업(Job) 목록
 jobs:
@@ -176,7 +176,7 @@ jobs:
             "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
             --fail --silent --show-error
 
-      # 14. PR에 테스트 결과 댓글 작성
+      # 14. PR에 테스트 결과 댓글 작성 (여러 문제 대응)
       - name: Comment test results
         if: always()
         uses: actions/github-script@v6
@@ -184,25 +184,103 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { result, details } = ${{ toJSON(steps.run-tests.outputs) }};
-            const { problem_id, author } = ${{ toJSON(steps.extract-info.outputs) }};
+            const { 
+              problem_id, 
+              author, 
+              multiple_problems, 
+              problems_count, 
+              problems_summary 
+            } = ${{ toJSON(steps.extract-info.outputs) }};
 
+            // 파일 구조 오류 처리
             if (problem_id === '0000' || author === 'unknown') {
-              const body = `## 📁 파일 구조 오류\n올바른 파일 구조(\`이름/문제번호/Main.java\`)로 제출해주세요.`;
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number, owner: context.repo.owner, repo: context.repo.repo, body: body
-              });
-              return;
-            }
+              const body = `## 📁 파일 구조 오류
+              
+            올바른 파일 구조(\`이름/문제번호/Main.java\`)로 제출해주세요.
 
-            let body;
-            if (result === 'PASS') {
-              body = `## ✅ 테스트 통과!\n🎉 **${author}**님의 문제 **${problem_id}** 해결을 축하합니다!\n- ✅ 샘플 테스트: 통과\n- 🤖 AI 생성 반례 테스트: 통과\n- 📊 README.md가 자동으로 업데이트되었습니다.\n\n브랜치 병합하고 삭제해주세요! 🚀`;
-            } else {
-              body = `## ❌ 테스트 실패\n**${author}**님의 문제 **${problem_id}** 코드에서 문제가 발견되었습니다:\n\`\`\`\n${details}\n\`\`\`\n코드를 수정한 후 다시 푸시해주세요! 💪`;
-            }
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number, owner: context.repo.owner, repo: context.repo.repo, body: body
-            });
+            ${problems_summary || ''}`;
+                          
+                          await github.rest.issues.createComment({
+                            issue_number: context.issue.number, 
+                            owner: context.repo.owner, 
+                            repo: context.repo.repo, 
+                            body: body
+                          });
+                          return;
+                        }
+
+                        let body;
+                        
+                        // 여러 문제 제출 시 헤더 추가
+                        const multiProblemHeader = multiple_problems === 'true' ? 
+                          `## 🎯 여러 문제 제출됨 (총 ${problems_count}개)
+                          
+            ${problems_summary}
+
+            ---
+
+            ` : '';
+
+                        if (result === 'PASS') {
+                          body = `${multiProblemHeader}## ✅ 테스트 통과!
+
+            🎉 **${author}**님의 문제 **${problem_id}** 해결을 축하합니다!
+
+            - ✅ 샘플 테스트: 통과
+            - 🤖 AI 생성 반례 테스트: 통과  
+            - 📊 README.md가 자동으로 업데이트되었습니다.
+
+            ${multiple_problems === 'true' ? 
+              `💡 **다른 문제들**: 나머지 문제들도 개별 PR로 제출해주세요!` : 
+              ''}
+
+            브랜치 병합하고 삭제해주세요! 🚀`;
+
+                        } else {
+                          body = `${multiProblemHeader}## ❌ 테스트 실패
+
+            **${author}**님의 문제 **${problem_id}** 코드에서 문제가 발견되었습니다:
+
+            \`\`\`
+            ${details}
+            \`\`\`
+
+            ${multiple_problems === 'true' ? 
+              `💡 **참고**: 이 문제를 해결한 후 다른 문제들은 별도 PR로 제출해주세요!` : 
+              ''}
+
+            코드를 수정한 후 다시 푸시해주세요! 💪`;
+                        }
+                        
+                        await github.rest.issues.createComment({
+                          issue_number: context.issue.number, 
+                          owner: context.repo.owner, 
+                          repo: context.repo.repo, 
+                          body: body
+                        });
+
+      # 15. 다중 문제 알림 (Mattermost)
+      - name: Send multiple problems notification
+        if: steps.extract-info.outputs.multiple_problems == 'true'
+        run: |
+          PROBLEMS_COUNT="${{ steps.extract-info.outputs.problems_count }}"
+          AUTHOR="${{ steps.extract-info.outputs.author }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+
+          cat > payload.json << EOF
+          {
+            "username": "BOJ-Bot",
+            "icon_emoji": ":warning:",
+            "text": "⚠️ **다중 문제 제출 감지**\\n\\n**${AUTHOR}**님이 PR #${PR_NUMBER}에서 ${PROBLEMS_COUNT}개의 문제를 동시에 제출했습니다.\\n\\n💡 **권장사항**: 문제별로 개별 PR을 만들어 주세요!\\n\\nPR 링크: ${PR_URL}"
+          }
+          EOF
+
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d @payload.json \
+            "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+            --fail --silent --show-error
 
   # 데드라인 알림 작업
   deadline-reminder:
