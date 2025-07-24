@@ -1,0 +1,29 @@
+name: Algorithm Study Deadline Checker
+
+on:
+  schedule:
+    # 디버깅용: 1분마다 실행
+    - cron: "* * * * *"
+  workflow_dispatch: # 수동 실행 가능
+
+jobs:
+  check-deadline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        run: |
+          pip install requests pytz
+
+      - name: Run deadline checker
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+          DEBUG_MODE: "true" # 디버깅 모드 활성화
+        run: python scripts/deadline_checker.py

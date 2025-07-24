@@ -4,9 +4,9 @@ name: BOJ Study Automation
 # 워크플로우 실행 조건
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   schedule:
-    - cron: '0 */2 * * *'
+    - cron: "0 */2 * * *"
 
 # 실행될 작업(Job) 목록
 jobs:
@@ -17,7 +17,7 @@ jobs:
 
     # 작업에 필요한 권한 설정
     permissions:
-      contents: write      # README.md 업데이트 및 커밋/푸시를 위해 필요
+      contents: write # README.md 업데이트 및 커밋/푸시를 위해 필요
       pull-requests: write # PR에 테스트 결과 댓글을 작성하기 위해 필요
 
     steps:
@@ -33,26 +33,18 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: "3.9"
 
       # 3. Java 환경 설정
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
-          distribution: 'temurin'
-          java-version: '11'
+          distribution: "temurin"
+          java-version: "11"
 
       # 4. Python 의존성 설치
       - name: Install dependencies
-        run: |
-          pip install google-generativeai pytz selenium webdriver-manager beautifulsoup4 requests
-          
-          # Chrome 브라우저가 최신 버전인지 확인
-          google-chrome --version
-          
-          # 추가 시스템 패키지 설치 (필요 시)
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser chromium-chromedriver
+        run: pip install google-generativeai pytz selenium webdriver-manager beautifulsoup4 requests
 
       # 5. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
       - name: Extract problem and code info
@@ -128,31 +120,60 @@ jobs:
             echo "README.md에 변경사항이 없어 커밋하지 않습니다."
           fi
 
-      # 12. 테스트 통과 시 Mattermost 알림 전송 (수정된 부분)
+      # 12. 테스트 통과 시 Mattermost 알림 전송 (안전한 버전)
       - name: Send Mattermost notification on success
         if: steps.run-tests.outputs.result == 'PASS'
         run: |
-          curl -X POST -H 'Content-Type: application/json' \
-          -d '{
-                "channel": "algorithm-study",
-                "username": "BOJ-Bot",
-                "icon_emoji": ":white_check_mark:",
-                "text": "🎉 **Tests Passed!** Problem: ${{ steps.extract-info.outputs.problem_id }} | Solver: ${{ steps.extract-info.outputs.author }} | Language: ${{ steps.extract-info.outputs.language }} | [PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}) ✅ All tests passed, README updated, ready for merge!"
-              }' \
-          "${{ secrets.MATTERMOST_WEBHOOK_URL }}" --silent --show-error --fail
+          # 환경변수로 값들을 미리 설정하여 JSON 인젝션 방지
+          PROBLEM_ID="${{ steps.extract-info.outputs.problem_id }}"
+          AUTHOR="${{ steps.extract-info.outputs.author }}"
+          LANGUAGE="${{ steps.extract-info.outputs.language }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
 
-      # 13. 테스트 실패 시 Mattermost 알림 전송 (수정된 부분)
+          cat > payload.json << EOF
+          {
+            "username": "BOJ-Bot",
+            "icon_emoji": ":white_check_mark:",
+            "text": "🎉 Test Passed!\\nProblem: ${PROBLEM_ID}\\nSolver: ${AUTHOR}\\nLanguage: ${LANGUAGE}\\nPR: ${PR_URL}"
+          }
+          EOF
+
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d @payload.json \
+            "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+            --fail --silent --show-error
+
+      # 13. 테스트 실패 시 Mattermost 알림 전송 (안전한 버전)
       - name: Send Mattermost notification on failure
         if: steps.run-tests.outputs.result == 'FAIL'
         run: |
-          curl -X POST -H 'Content-Type: application/json' \
-          -d '{
-                "channel": "algorithm-study",
-                "username": "BOJ-Bot",
-                "icon_emoji": ":x:",
-                "text": "❌ **Tests Failed** Problem: ${{ steps.extract-info.outputs.problem_id }} | Submitter: ${{ steps.extract-info.outputs.author }} | [PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}) 💪 Please fix and push again!"
-              }' \
-          "${{ secrets.MATTERMOST_WEBHOOK_URL }}" --silent --show-error --fail
+          # 환경변수로 값들을 미리 설정
+          PROBLEM_ID="${{ steps.extract-info.outputs.problem_id }}"
+          AUTHOR="${{ steps.extract-info.outputs.author }}"
+          LANGUAGE="${{ steps.extract-info.outputs.language }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+
+          # 에러 세부사항을 안전하게 처리 (따옴표, 백슬래시 등 이스케이프)
+          ERROR_DETAILS="${{ steps.run-tests.outputs.details }}"
+          # 특수문자 처리: 백슬래시를 두 번, 따옴표를 이스케이프
+          ERROR_DETAILS=$(echo "$ERROR_DETAILS" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed 's/`/\\`/g')
+
+          cat > payload.json << EOF
+          {
+            "username": "BOJ-Bot",
+            "icon_emoji": ":x:",
+            "text": "❌ Test Failed!\\nProblem: ${PROBLEM_ID}\\nSubmitter: ${AUTHOR}\\nLanguage: ${LANGUAGE}\\nPR: ${PR_URL}\\n\\n**Error Details:**\\n\`\`\`\\n${ERROR_DETAILS}\\n\`\`\`\\n\\n💪 Please fix the code and push again!"
+          }
+          EOF
+
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d @payload.json \
+            "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+            --fail --silent --show-error
 
       # 14. PR에 테스트 결과 댓글 작성
       - name: Comment test results
@@ -191,7 +212,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: "3.9"
       - name: Check deadlines and send reminders
         env:
           MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}

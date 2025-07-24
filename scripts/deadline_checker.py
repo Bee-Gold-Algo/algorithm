@@ -47,6 +47,12 @@ def get_current_week_deadline():
     kst = pytz.timezone('Asia/Seoul')
     now = datetime.now(kst)
     
+    # 디버깅 모드: 환경변수 DEBUG_MODE가 설정되어 있으면 1분 후를 마감일로 설정
+    if os.getenv('DEBUG_MODE') == 'true':
+        deadline = now + timedelta(minutes=1)
+        print(f"🐛 디버깅 모드: 마감일을 1분 후로 설정 ({deadline.strftime('%H:%M:%S')})")
+        return deadline
+    
     # 일요일을 주의 마지막으로 간주 (0=월요일, 6=일요일)
     days_until_sunday = (6 - now.weekday()) % 7
     if days_until_sunday == 0 and now.hour >= 23:  # 일요일 밤 11시 이후면 다음 주
@@ -168,7 +174,13 @@ def create_reminder_message(deadline, need_reminder, repo_info):
     repo_name = repo_info.get('name', 'Algorithm Study') if repo_info else 'Algorithm Study'
     repo_url = repo_info.get('html_url', '') if repo_info else ''
     
-    if hours_left <= 2:
+    # 디버깅 모드 체크
+    is_debug = os.getenv('DEBUG_MODE') == 'true'
+    
+    if is_debug:
+        urgency = "🐛 **디버깅 모드**"
+        time_msg = f"{int(time_left.total_seconds() / 60)}분 {int(time_left.total_seconds() % 60)}초"
+    elif hours_left <= 2:
         # 2시간 이내 긴급 알림
         urgency = "🚨 **긴급**"
         time_msg = f"{hours_left}시간 {int((time_left.total_seconds() % 3600) / 60)}분"
@@ -181,4 +193,93 @@ def create_reminder_message(deadline, need_reminder, repo_info):
         urgency = "📅 **알림**"
         time_msg = f"{int(hours_left/24)}일 {hours_left%24}시간"
     
-    message =
+    message = f"""
+{urgency} 알고리즘 스터디 {'테스트 ' if is_debug else ''}알림
+
+📌 **마감일**: {deadline_kst.strftime('%Y년 %m월 %d일 (%A) %H:%M:%S')}
+⏰ **남은 시간**: {time_msg}
+🏠 **레포지토리**: [{repo_name}]({repo_url})
+{'🐛 **현재 디버깅 모드로 실행 중입니다**' if is_debug else ''}
+
+"""
+    
+    if need_reminder:
+        message += f"""
+🔔 **{'테스트 대상' if is_debug else '제출이 필요한 분들'}** ({len(need_reminder)}명):
+{', '.join([f'@{name}' for name in need_reminder])}
+
+{'💡 **테스트**: 디버깅 모드에서 알림 기능을 테스트하고 있습니다.' if is_debug else '💡 **알림**: 이번 주 문제를 아직 제출하지 않으셨네요. 마감일까지 시간이 얼마 남지 않았습니다!'}
+"""
+    else:
+        message += """
+✅ **모든 참가자가 이번 주 문제를 제출했습니다!** 👏
+
+계속해서 꾸준히 참여해주세요! 🎉
+"""
+    
+    message += f"""
+---
+📝 **참고사항**:
+- 마감일: 매주 일요일 23:59 (KST)
+- 문제 제출은 PR(Pull Request)을 통해 진행됩니다
+- 궁금한 점이 있으시면 언제든 문의해주세요!
+
+*이 메시지는 자동으로 전송되었습니다.{' (디버깅 모드)' if is_debug else ''}*
+"""
+    
+    return message
+
+def main():
+    """메인 실행 함수"""
+    print("🤖 알고리즘 스터디 마감일 체크 시작...")
+    
+    # 디버깅 모드 체크
+    if os.getenv('DEBUG_MODE') == 'true':
+        print("🐛 디버깅 모드가 활성화되었습니다!")
+        print("🐛 1분마다 알림을 발송하고 모든 참가자에게 테스트 메시지를 보냅니다.")
+    
+    # 1. 레포지토리 정보 가져오기
+    repo_info = get_repository_info()
+    if not repo_info:
+        print("❌ 레포지토리 정보를 가져올 수 없습니다.")
+        return
+    
+    print(f"📁 레포지토리: {repo_info.get('name', 'Unknown')}")
+    
+    # 2. 현재 주차 마감일 계산
+    deadline = get_current_week_deadline()
+    print(f"📅 이번 주 마감일: {deadline.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    
+    # 3. 참가자 목록 가져오기
+    participants = get_participants_from_readme()
+    if not participants:
+        print("❌ 참가자 목록을 찾을 수 없습니다.")
+        return
+    
+    print(f"👥 참가자 수: {len(participants)}명")
+    print(f"👥 참가자: {', '.join(participants)}")
+    
+    # 4. 최근 제출 현황 조회
+    recent_submissions = get_recent_submissions()
+    print(f"📝 최근 1주일 제출: {len(recent_submissions)}건")
+    
+    # 5. 알림이 필요한 사용자 확인
+    need_reminder = check_who_needs_reminder(participants, recent_submissions, deadline)
+    print(f"🔔 알림 필요: {len(need_reminder)}명")
+    
+    if need_reminder:
+        print(f"🔔 알림 대상: {', '.join(need_reminder)}")
+    
+    # 6. 알림 메시지 생성 및 전송
+    message = create_reminder_message(deadline, need_reminder, repo_info)
+    
+    # 7. Mattermost로 알림 전송
+    success = send_mattermost_notification(message)
+    
+    if success:
+        print("✅ 마감일 체크 완료!")
+    else:
+        print("❌ 알림 전송 실패")
+
+if __name__ == "__main__":
+    main()
