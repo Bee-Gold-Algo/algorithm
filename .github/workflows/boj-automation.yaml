@@ -54,21 +54,24 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 6. 파일 구조가 올바르지 않으면 테스트 건너뛰기
-      - name: Skip test if dummy values
-        id: check-skip
+      # 6. 파일 구조 및 유효성 확인
+      - name: Check valid problems
+        id: check-validity
         run: |
-          if [ "${{ steps.extract-info.outputs.problem_id }}" = "0000" ]; then
+          HAS_VALID_PROBLEMS="${{ steps.extract-info.outputs.has_valid_problems }}"
+          PROBLEM_ID="${{ steps.extract-info.outputs.problem_id }}"
+
+          if [ "$HAS_VALID_PROBLEMS" = "false" ] || [ "$PROBLEM_ID" = "0000" ]; then
             echo "skip_tests=true" >> $GITHUB_OUTPUT
-            echo "⚠️ 파일 구조 오류로 인해 테스트를 건너뜁니다."
+            echo "⚠️ 분석할 수 있는 유효한 문제가 없습니다."
           else
             echo "skip_tests=false" >> $GITHUB_OUTPUT
+            echo "✅ 유효한 문제를 발견했습니다. 테스트를 진행합니다."
           fi
 
       # 7. solved.ac API로 문제 정보 가져오기
       - name: Get problem details from solved.ac
-        if: steps.check-skip.outputs.skip_tests == 'false'
+        if: steps.check-validity.outputs.skip_tests == 'false'
         run: |
           python scripts/fetch_boj_problem.py \
             --problem-id ${{ steps.extract-info.outputs.problem_id }} \
@@ -76,7 +79,7 @@ jobs:
 
       # 8. Gemini API로 반례 테스트케이스 생성
       - name: Generate test cases with Gemini
-        if: steps.check-skip.outputs.skip_tests == 'false'
+        if: steps.check-validity.outputs.skip_tests == 'false'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
@@ -88,7 +91,7 @@ jobs:
 
       # 9. 모든 테스트 실행
       - name: Run all tests
-        if: steps.check-skip.outputs.skip_tests == 'false'
+        if: steps.check-validity.outputs.skip_tests == 'false'
         id: run-tests
         run: |
           python scripts/test_runner.py \
@@ -121,22 +124,36 @@ jobs:
             echo "README.md에 변경사항이 없어 커밋하지 않습니다."
           fi
 
-      # 12. 테스트 통과 시 Mattermost 알림 전송 (안전한 버전)
+      # 12. 테스트 통과 시 Mattermost 알림 전송
       - name: Send Mattermost notification on success
         if: steps.run-tests.outputs.result == 'PASS'
         run: |
-          # 환경변수로 값들을 미리 설정하여 JSON 인젝션 방지
           PROBLEM_ID="${{ steps.extract-info.outputs.problem_id }}"
           AUTHOR="${{ steps.extract-info.outputs.author }}"
           LANGUAGE="${{ steps.extract-info.outputs.language }}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
+          TOTAL_COUNT="${{ steps.extract-info.outputs.total_problems_count }}"
+          ADDED_COUNT="${{ steps.extract-info.outputs.added_problems_count }}"
+          MODIFIED_COUNT="${{ steps.extract-info.outputs.modified_problems_count }}"
+
+          # 추가 정보 생성
+          EXTRA_INFO=""
+          if [ "$TOTAL_COUNT" != "1" ]; then
+            if [ "$ADDED_COUNT" != "0" ] && [ "$MODIFIED_COUNT" != "0" ]; then
+              EXTRA_INFO="\\n📊 이번 PR: 총 ${TOTAL_COUNT}개 (새 문제 ${ADDED_COUNT}개, 수정 ${MODIFIED_COUNT}개)"
+            elif [ "$ADDED_COUNT" != "0" ]; then
+              EXTRA_INFO="\\n📊 이번 PR: 새 문제 ${ADDED_COUNT}개"
+            elif [ "$MODIFIED_COUNT" != "0" ]; then
+              EXTRA_INFO="\\n📊 이번 PR: 수정된 문제 ${MODIFIED_COUNT}개"
+            fi
+          fi
 
           cat > payload.json << EOF
           {
             "username": "BOJ-Bot",
             "icon_emoji": ":white_check_mark:",
-            "text": "🎉 Test Passed!\\nProblem: ${PROBLEM_ID}\\nSolver: ${AUTHOR}\\nLanguage: ${LANGUAGE}\\nPR: ${PR_URL}"
+            "text": "🎉 Test Passed!\\nProblem: ${PROBLEM_ID}\\nSolver: ${AUTHOR}\\nLanguage: ${LANGUAGE}\\nPR: ${PR_URL}${EXTRA_INFO}"
           }
           EOF
 
@@ -146,20 +163,17 @@ jobs:
             "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
             --fail --silent --show-error
 
-      # 13. 테스트 실패 시 Mattermost 알림 전송 (안전한 버전)
+      # 13. 테스트 실패 시 Mattermost 알림 전송
       - name: Send Mattermost notification on failure
         if: steps.run-tests.outputs.result == 'FAIL'
         run: |
-          # 환경변수로 값들을 미리 설정
           PROBLEM_ID="${{ steps.extract-info.outputs.problem_id }}"
           AUTHOR="${{ steps.extract-info.outputs.author }}"
           LANGUAGE="${{ steps.extract-info.outputs.language }}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
 
-          # 에러 세부사항을 안전하게 처리 (따옴표, 백슬래시 등 이스케이프)
           ERROR_DETAILS="${{ steps.run-tests.outputs.details }}"
-          # 특수문자 처리: 백슬래시를 두 번, 따옴표를 이스케이프
           ERROR_DETAILS=$(echo "$ERROR_DETAILS" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed 's/`/\\`/g')
 
           cat > payload.json << EOF
@@ -176,7 +190,7 @@ jobs:
             "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
             --fail --silent --show-error
 
-      # 14. PR에 테스트 결과 댓글 작성 (여러 문제 대응)
+      # 14. PR에 테스트 결과 댓글 작성
       - name: Comment test results
         if: always()
         uses: actions/github-script@v6
@@ -185,37 +199,48 @@ jobs:
           script: |
             const { result, details } = ${{ toJSON(steps.run-tests.outputs) }};
             const { 
-              problem_id, 
               author, 
-              multiple_problems, 
-              problems_count, 
-              problems_summary 
+              problem_id,
+              has_valid_problems,
+              problems_summary,
+              total_problems_count,
+              is_multiple_problems
             } = ${{ toJSON(steps.extract-info.outputs) }};
 
-            // 파일 구조 오류 처리
-            if (problem_id === '0000' || author === 'unknown') {
-              const body = `## 📁 파일 구조 오류
-              
-            올바른 파일 구조(\`이름/문제번호/Main.java\`)로 제출해주세요.
+            // 유효한 문제가 없는 경우  
+            if (has_valid_problems === 'false' || problem_id === '0000') {
+              const body = `## 📁 분석할 수 있는 문제가 없습니다
 
-            ${problems_summary || ''}`;
+            **${author}**님의 PR에서 분석할 수 있는 Main.java 파일을 찾지 못했습니다.
+
+            **확인 사항:**
+            - 파일 경로가 \`본인이름/문제번호/Main.java\` 형식으로 작성되었는지 확인하세요
+            - 실제로 변경사항이 있는 파일인지 확인하세요
+            - PR에 본인의 파일만 포함되어 있는지 확인하세요
+
+            ${problems_summary}
+
+            올바른 형식으로 파일을 추가한 후 다시 푸시해주세요! 📝`;
                           
                           await github.rest.issues.createComment({
-                            issue_number: context.issue.number, 
-                            owner: context.repo.owner, 
-                            repo: context.repo.repo, 
+                            issue_number: context.issue.number,
+                            owner: context.repo.owner,
+                            repo: context.repo.repo,
                             body: body
                           });
                           return;
                         }
 
+                        // 정상적인 테스트 결과 처리
                         let body;
                         
-                        // 여러 문제 제출 시 헤더 추가
-                        const multiProblemHeader = multiple_problems === 'true' ? 
-                          `## 🎯 여러 문제 제출됨 (총 ${problems_count}개)
+                        // 여러 문제 변경 시 헤더 추가
+                        const multiProblemHeader = is_multiple_problems === 'true' ? 
+                          `## 📊 다중 문제 변경 감지 (총 ${total_problems_count}개)
                           
             ${problems_summary}
+
+            **현재 테스트**: 문제 ${problem_id} (우선순위 최상위)
 
             ---
 
@@ -230,8 +255,8 @@ jobs:
             - 🤖 AI 생성 반례 테스트: 통과  
             - 📊 README.md가 자동으로 업데이트되었습니다.
 
-            ${multiple_problems === 'true' ? 
-              `💡 **다른 문제들**: 나머지 문제들도 개별 PR로 제출해주세요!` : 
+            ${is_multiple_problems === 'true' ? 
+              `💡 **참고**: 이번 PR에서 변경된 다른 문제들도 동일하게 검증되었을 것으로 간주됩니다.` : 
               ''}
 
             브랜치 병합하고 삭제해주세요! 🚀`;
@@ -245,8 +270,8 @@ jobs:
             ${details}
             \`\`\`
 
-            ${multiple_problems === 'true' ? 
-              `💡 **참고**: 이 문제를 해결한 후 다른 문제들은 별도 PR로 제출해주세요!` : 
+            ${is_multiple_problems === 'true' ? 
+              `💡 **참고**: 우선순위가 가장 높은 문제부터 테스트합니다. 이 문제를 해결한 후 다시 푸시하면 다른 문제들도 함께 검증됩니다.` : 
               ''}
 
             코드를 수정한 후 다시 푸시해주세요! 💪`;
