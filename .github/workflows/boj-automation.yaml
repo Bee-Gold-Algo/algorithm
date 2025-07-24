@@ -21,28 +21,28 @@ jobs:
       pull-requests: write   # PR에 테스트 결과 댓글을 작성하기 위해 필요
 
     steps:
-    - name: Debug Secrets
-      run: |
-        echo "=== 시크릿 디버깅 ==="
-        echo "GEMINI_API_KEY 길이: ${#GEMINI_API_KEY}"
-        echo "MATTERMOST_WEBHOOK_URL 길이: ${#MATTERMOST_WEBHOOK_URL}"
-        echo "GITHUB_TOKEN 길이: ${#GITHUB_TOKEN}"
-        
-        # 각 시크릿별 상태 확인
-        if [ -z "$GEMINI_API_KEY" ]; then
-          echo "❌ GEMINI_API_KEY: EMPTY"
-        else
-          echo "✅ GEMINI_API_KEY: EXISTS (length: ${#GEMINI_API_KEY})"
-        fi
-        
-        if [ -z "$MATTERMOST_WEBHOOK_URL" ]; then
-          echo "❌ MATTERMOST_WEBHOOK_URL: EMPTY" 
-        else
-          echo "✅ MATTERMOST_WEBHOOK_URL: EXISTS (length: ${#MATTERMOST_WEBHOOK_URL})"
-        fi
-      env:
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+      - name: Debug Secrets
+        run: |
+          echo "=== 시크릿 디버깅 ==="
+          echo "GEMINI_API_KEY 길이: ${#GEMINI_API_KEY}"
+          echo "MATTERMOST_WEBHOOK_URL 길이: ${#MATTERMOST_WEBHOOK_URL}"
+          echo "GITHUB_TOKEN 길이: ${#GITHUB_TOKEN}"
+          
+          # 각 시크릿별 상태 확인
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "❌ GEMINI_API_KEY: EMPTY"
+          else
+            echo "✅ GEMINI_API_KEY: EXISTS (length: ${#GEMINI_API_KEY})"
+          fi
+          
+          if [ -z "$MATTERMOST_WEBHOOK_URL" ]; then
+            echo "❌ MATTERMOST_WEBHOOK_URL: EMPTY" 
+          else
+            echo "✅ MATTERMOST_WEBHOOK_URL: EXISTS (length: ${#MATTERMOST_WEBHOOK_URL})"
+          fi
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
 
       # 1. 코드 체크아웃
       # PR 브랜치 자체를 가져와 'Detached HEAD' 문제를 해결합니다.
