@@ -9,7 +9,7 @@ import argparse
 import json
 import requests
 from bs4 import BeautifulSoup
-import time
+import time 
 import os
 
 # Selenium 관련 라이브러리 임포트
