@@ -44,7 +44,13 @@ jobs:
 
       # 4. Python 의존성 설치
       - name: Install dependencies
-        run: pip install google-generativeai pytz selenium webdriver-manager beautifulsoup4 requests
+        run: pip install google-generativeai pytz selenium webdriver-manager beautifulsoup4 requests playwright
+
+      - name: Install Playwright browsers
+        run: python -m playwright install --with-deps
+
+      - name: Run scraper script
+        run: python scripts/fetch_boj_problem.py --problem-id ${{ github.event.inputs.problem_id }}
 
       # 5. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
       - name: Extract problem and code info
