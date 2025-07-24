@@ -1,150 +1,254 @@
+# GitHub Actions 워크플로우 이름
 name: BOJ Study Automation
 
+# 워크플로우 실행 조건
 on:
   pull_request:
     branches: [ main ]
   schedule:
-    - cron: '0 */2 * * *'  # 2시간마다 데드라인 체크
+    - cron: '0 */2 * * *'
 
+# 실행될 작업(Job) 목록
 jobs:
+  # PR 검증 및 자동 병합 작업
   test-and-merge:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        fetch-depth: 0
-    
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-    
-    - name: Setup Java
-      uses: actions/setup-java@v3
-      with:
-        distribution: 'temurin'
-        java-version: '11'
-    
-    - name: Install dependencies
-      run: |
-        pip install requests beautifulsoup4 google-generativeai pytz
-    
-    - name: Extract problem and code info
-      id: extract-info
-      run: |
-        python scripts/extract_pr_info.py
-      env:
-        PR_NUMBER: ${{ github.event.pull_request.number }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Get problem details from BOJ
-      id: problem-details
-      run: |
-        python scripts/fetch_boj_problem.py \
-          --problem-id ${{ steps.extract-info.outputs.problem_id }}
-    
-    - name: Generate test cases with Gemini
-      id: generate-tests
-      env:
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      run: |
-        python scripts/gemini_test_generator.py \
-          --problem-id ${{ steps.extract-info.outputs.problem_id }} \
-          --code-file ${{ steps.extract-info.outputs.code_file }} \
-          --language ${{ steps.extract-info.outputs.language }} \
-          --problem-info problem_info.json
-    
-    - name: Run all tests
-      id: run-tests
-      run: |
-        python scripts/test_runner.py \
-          --code-file ${{ steps.extract-info.outputs.code_file }} \
-          --language ${{ steps.extract-info.outputs.language }} \
-          --sample-tests sample_tests.json \
-          --generated-tests generated_tests.json
-    
-    - name: Update README on success
-      if: steps.run-tests.outputs.result == 'PASS'
-      run: |
-        python scripts/update_readme.py \
-          --problem-id ${{ steps.extract-info.outputs.problem_id }} \
-          --author ${{ steps.extract-info.outputs.author }} \
-          --submission-date $(date '+%Y-%m-%d') \
-          --language ${{ steps.extract-info.outputs.language }}
-    
-    - name: Commit README changes
-      if: steps.run-tests.outputs.result == 'PASS'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add README.md
-        if ! git diff --cached --quiet; then
-          git commit -m "📊 Update progress: Problem ${{ steps.extract-info.outputs.problem_id }} solved by ${{ steps.extract-info.outputs.author }}"
-          git push
-        fi
-    
-    - name: Auto-merge on success
-      if: steps.run-tests.outputs.result == 'PASS'
-      run: |
-        gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Comment test results
-      if: always()
-      uses: actions/github-script@v6
-      with:
-        script: |
-          const result = '${{ steps.run-tests.outputs.result }}';
-          const details = '${{ steps.run-tests.outputs.details }}';
-          
-          let comment = '';
-          if (result === 'PASS') {
-            comment = `## ✅ 테스트 통과!
-            
-            🎉 모든 테스트케이스를 통과했습니다!
-            - 샘플 테스트: 통과
-            - AI 생성 반례 테스트: 통과
-            - README.md가 자동으로 업데이트되었습니다.
-            
-            자동으로 병합됩니다! 🚀`;
-          } else {
-            comment = `## ❌ 테스트 실패
-            
-            다음 테스트케이스에서 문제가 발견되었습니다:
-            
-            \`\`\`
-            ${details}
-            \`\`\`
-            
-            코드를 수정한 후 다시 푸시해주세요! 💪`;
-          }
-          
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: comment
-          });
 
+    # 작업에 필요한 권한 설정
+    permissions:
+      contents: write        # README.md 업데이트 및 커밋/푸시를 위해 필요
+      pull-requests: write   # PR에 테스트 결과 댓글을 작성하기 위해 필요
+
+    steps:
+      # 1. 코드 체크아웃
+      # PR 브랜치 자체를 가져와 'Detached HEAD' 문제를 해결합니다.
+      - name: Checkout PR Branch
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      # 2. Python 환경 설정
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      # 3. Java 환경 설정
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      # 4. Python 의존성 설치
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 google-generativeai pytz
+
+      # 5. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
+      - name: Extract problem and code info
+        id: extract-info
+        run: python scripts/extract_pr_info.py # 스크립트 내부에서 API를 호출하도록 변경
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 6. 파일 구조가 올바르지 않으면 테스트 건너뛰기
+      - name: Skip test if dummy values
+        id: check-skip
+        run: |
+          if [ "${{ steps.extract-info.outputs.problem_id }}" = "0000" ]; then
+            echo "skip_tests=true" >> $GITHUB_OUTPUT
+            echo "⚠️ 파일 구조 오류로 인해 테스트를 건너뜁니다."
+          else
+            echo "skip_tests=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 7. solved.ac API로 문제 정보 가져오기
+      - name: Get problem details from solved.ac
+        if: steps.check-skip.outputs.skip_tests == 'false'
+        run: |
+          python scripts/fetch_boj_problem.py \
+            --problem-id ${{ steps.extract-info.outputs.problem_id }}
+
+      # 8. Gemini API로 반례 테스트케이스 생성
+      - name: Generate test cases with Gemini
+        if: steps.check-skip.outputs.skip_tests == 'false'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python scripts/gemini_test_generator.py \
+            --problem-id ${{ steps.extract-info.outputs.problem_id }} \
+            --code-file ${{ steps.extract-info.outputs.code_file }} \
+            --language ${{ steps.extract-info.outputs.language }} \
+            --problem-info problem_info.json
+
+      # 9. 모든 테스트 실행
+      - name: Run all tests
+        if: steps.check-skip.outputs.skip_tests == 'false'
+        id: run-tests
+        run: |
+          python scripts/test_runner.py \
+            --code-file ${{ steps.extract-info.outputs.code_file }} \
+            --language ${{ steps.extract-info.outputs.language }} \
+            --sample-tests sample_tests.json \
+            --generated-tests generated_tests.json
+
+      # 10. 테스트 통과 시 README.md 업데이트
+      - name: Update README on success
+        if: steps.run-tests.outputs.result == 'PASS'
+        run: |
+          python scripts/update_readme.py \
+            --problem-id ${{ steps.extract-info.outputs.problem_id }} \
+            --author ${{ steps.extract-info.outputs.author }} \
+            --submission-date $(date '+%Y-%m-%d') \
+            --language ${{ steps.extract-info.outputs.language }}
+
+      # 11. README.md 변경사항을 PR 브랜치에 커밋 및 푸시
+      - name: Commit and Push README changes
+        if: steps.run-tests.outputs.result == 'PASS'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          if ! git diff --cached --quiet; then
+            git commit -m "📊 Update progress: Problem ${{ steps.extract-info.outputs.problem_id }} solved by ${{ steps.extract-info.outputs.author }}"
+            git push origin ${{ github.event.pull_request.head.ref }}
+          else
+            echo "README.md에 변경사항이 없어 커밋하지 않습니다."
+          fi
+
+      # 12. 테스트 통과 시 Mattermost 알림 전송
+      - name: Send Mattermost notification on success
+        if: steps.run-tests.outputs.result == 'PASS'
+        run: |
+          curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "channel": "algorithm-study",
+              "username": "BOJ-Bot",
+              "icon_emoji": ":white_check_mark:",
+              "text": "🎉 **테스트 통과!**",
+              "attachments": [
+                {
+                  "color": "good",
+                  "fields": [
+                    {
+                      "title": "문제 번호",
+                      "value": "${{ steps.extract-info.outputs.problem_id }}",
+                      "short": true
+                    },
+                    {
+                      "title": "해결자",
+                      "value": "${{ steps.extract-info.outputs.author }}",
+                      "short": true
+                    },
+                    {
+                      "title": "언어",
+                      "value": "${{ steps.extract-info.outputs.language }}",
+                      "short": true
+                    },
+                    {
+                      "title": "PR 링크",
+                      "value": "[PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})",
+                      "short": true
+                    }
+                  ],
+                  "text": "✅ 샘플 테스트 통과\n🤖 AI 생성 반례 테스트 통과\n📊 README.md 자동 업데이트\n🚀 자동 병합 예정"
+                }
+              ]
+            }'
+
+      # 13. 테스트 실패 시 Mattermost 알림 전송
+      - name: Send Mattermost notification on failure
+        if: steps.run-tests.outputs.result == 'FAIL'
+        run: |
+          curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "channel": "algorithm-study",
+              "username": "BOJ-Bot",
+              "icon_emoji": ":x:",
+              "text": "❌ **테스트 실패**",
+              "attachments": [
+                {
+                  "color": "danger",
+                  "fields": [
+                    {
+                      "title": "문제 번호",
+                      "value": "${{ steps.extract-info.outputs.problem_id }}",
+                      "short": true
+                    },
+                    {
+                      "title": "제출자",
+                      "value": "${{ steps.extract-info.outputs.author }}",
+                      "short": true
+                    },
+                    {
+                      "title": "언어",
+                      "value": "${{ steps.extract-info.outputs.language }}",
+                      "short": true
+                    },
+                    {
+                      "title": "PR 링크",
+                      "value": "[PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})",
+                      "short": true
+                    }
+                  ],
+                  "text": "```\n${{ steps.run-tests.outputs.details }}\n```\n💪 코드를 수정한 후 다시 푸시해주세요!"
+                }
+              ]
+            }'
+
+      # 14. 테스트 통과 시 자동 병합 (선택사항)
+      - name: Auto-merge on success
+        if: steps.run-tests.outputs.result == 'PASS'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch
+
+      # 15. PR에 테스트 결과 댓글 작성
+      - name: Comment test results
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { result, details } = ${{ toJSON(steps.run-tests.outputs) }};
+            const { problem_id, author } = ${{ toJSON(steps.extract-info.outputs) }};
+
+            if (problem_id === '0000' || author === 'unknown') {
+              const body = `## 📁 파일 구조 오류\n올바른 파일 구조(\`이름/문제번호/Main.java\`)로 제출해주세요.`;
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number, owner: context.repo.owner, repo: context.repo.repo, body: body
+              });
+              return;
+            }
+
+            let body;
+            if (result === 'PASS') {
+              body = `## ✅ 테스트 통과!\n🎉 **${author}**님의 문제 **${problem_id}** 해결을 축하합니다!\n- 📊 README.md가 자동으로 업데이트되었습니다.\n\n자동으로 병합됩니다! 🚀`;
+            } else {
+              body = `## ❌ 테스트 실패\n**${author}**님의 문제 **${problem_id}** 코드에서 문제가 발견되었습니다:\n\`\`\`\n${details}\n\`\`\`\n코드를 수정한 후 다시 푸시해주세요! 💪`;
+            }
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number, owner: context.repo.owner, repo: context.repo.repo, body: body
+            });
+
+  # 데드라인 알림 작업
   deadline-reminder:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-    
-    - name: Check deadlines and send reminders
-      env:
-        MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        python scripts/deadline_checker.py
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Check deadlines and send reminders
+        env:
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/deadline_checker.py
