@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 scripts/fetch_boj_problem.py
-백준에서 문제 정보를 수집합니다. (뷰포트 모드 고정 - 우회 최적화)
-GitHub Actions 환경에서 자연스러운 브라우저 환경 구현
+백준에서 문제 정보를 수집합니다. (requests + BeautifulSoup 방식 - 안정적!)
+GitHub Actions와 로컬 환경 모두에서 완벽 작동
 """
 
 import argparse
@@ -11,15 +11,6 @@ import requests
 from bs4 import BeautifulSoup
 import time 
 import os
-
-# Selenium 관련 라이브러리 임포트
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 
 def get_solved_ac_info(problem_id):
     """solved.ac API에서 문제 정보 가져오기"""
@@ -45,98 +36,6 @@ def get_solved_ac_info(problem_id):
         print(f"  ⚠️ solved.ac API 오류: {e}")
     
     return {}
-
-def setup_viewport_chrome_driver():
-    """뷰포트 모드 Chrome WebDriver 설정 (우회 최적화)"""
-    options = Options()
-    
-    print("  🌐 뷰포트 모드 브라우저 설정 중...")
-    
-    # 뷰포트 모드 설정 (헤드리스 비활성화)
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--start-maximized")
-    
-    # GitHub Actions 환경 대응
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--remote-debugging-port=9222")
-    
-    # 가상 디스플레이 설정 (GitHub Actions용)
-    options.add_argument("--virtual-time-budget=60000")
-    options.add_argument("--run-all-compositor-stages-before-draw")
-    
-    # 자연스러운 브라우저 환경 구성
-    options.add_argument("--disable-web-security")
-    options.add_argument("--disable-features=VizDisplayCompositor")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--allow-running-insecure-content")
-    
-    # JavaScript와 이미지 로딩 활성화 (자연스러운 환경)
-    print("  ⚡ JavaScript 및 이미지 로딩 활성화")
-    
-    # 로그 레벨 조정
-    options.add_argument("--log-level=1")
-    options.add_argument("--enable-logging")
-    options.add_argument("--v=1")
-    
-    # 메모리 최적화
-    options.add_argument("--memory-pressure-off")
-    options.add_argument("--max_old_space_size=4096")
-    
-    # 실제 사용자 브라우저 환경 시뮬레이션
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    
-    # 고급 우회 설정
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-    
-    # 추가 우회 옵션
-    options.add_argument("--disable-features=VizDisplayCompositor,VizHitTestSurfaceLayer")
-    options.add_argument("--disable-ipc-flooding-protection")
-    
-    try:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
-        
-        # 고급 우회 스크립트
-        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-            "source": """
-            // 자동화 탐지 우회
-            Object.defineProperty(navigator, 'webdriver', {
-              get: () => undefined
-            });
-            
-            // 추가 속성 조작
-            Object.defineProperty(navigator, 'plugins', {
-              get: () => [1, 2, 3, 4, 5]
-            });
-            
-            Object.defineProperty(navigator, 'languages', {
-              get: () => ['ko-KR', 'ko', 'en-US', 'en']
-            });
-            
-            // 화면 해상도 설정
-            Object.defineProperty(screen, 'width', {
-              get: () => 1920
-            });
-            Object.defineProperty(screen, 'height', {
-              get: () => 1080
-            });
-            """
-        })
-        
-        # 브라우저 창 크기 설정
-        driver.set_window_size(1920, 1080)
-        
-        window_size = driver.get_window_size()
-        print(f"  ✅ 뷰포트 브라우저 초기화 완료 (해상도: {window_size['width']}x{window_size['height']})")
-        
-        return driver
-    except Exception as e:
-        print(f"  ❌ 뷰포트 브라우저 설정 실패: {e}")
-        return None
 
 def extract_problem_info_from_html(html_content):
     """HTML에서 문제 정보 추출"""
@@ -224,209 +123,123 @@ def extract_problem_info_from_html(html_content):
     
     return problem_info
 
-def scrape_boj_with_viewport(problem_id):
-    """뷰포트 모드로 백준 스크래핑"""
-    print("  🌐 뷰포트 모드 스크래핑 시작...")
-
-    driver = setup_viewport_chrome_driver()
-    if not driver:
-        print("  ❌ 뷰포트 브라우저 설정 실패")
-        return None
-
-    try:
-        url = f"https://www.acmicpc.net/problem/{problem_id}"
-        print(f"  → 페이지 접속: {url}")
-        
-        # 페이지 로드
-        driver.get(url)
-        
-        # 페이지 로딩 대기
-        print("  ⏳ 페이지 로딩 및 JavaScript 실행 대기...")
-        time.sleep(3)
-
-        # DOM 요소 로드 대기
-        try:
-            WebDriverWait(driver, 45).until(
-                EC.presence_of_element_located((By.ID, "problem-body"))
-            )
-            print("  ✅ 페이지 DOM 로드 완료")
-        except:
-            print("  ⚠️ DOM 로드 타임아웃, 현재 상태로 진행...")
-        
-        # 추가 안정화 대기
-        print("  ⏳ 페이지 안정화 대기...")
-        time.sleep(5)
-
-        # 페이지 정보 확인
-        current_url = driver.current_url
-        page_title = driver.title
-        html_content = driver.page_source
-        
-        print(f"  📄 페이지 제목: {page_title}")
-        print(f"  🌐 현재 URL: {current_url}")
-        print(f"  📏 HTML 크기: {len(html_content):,} 문자")
-        
-        # 페이지 유효성 검사
-        if "존재하지 않는 문제" in html_content or len(html_content) < 1000:
-            print("  ❌ 유효하지 않은 페이지 응답")
-            return None
-        
-        # 페이지 스크롤 (모든 요소 로드 보장)
-        print("  📜 페이지 스크롤하여 모든 요소 로드...")
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(2)
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(1)
-        
-        # 최종 HTML 획득
-        final_html = driver.page_source
-        print(f"  📏 최종 HTML 크기: {len(final_html):,} 문자")
-        
-        # 문제 정보 추출
-        problem_info = extract_problem_info_from_html(final_html)
-        
-        if problem_info and len(problem_info.get('samples', [])) > 0:
-            print(f"  🎉 뷰포트 스크래핑 성공! (샘플 {len(problem_info['samples'])}개)")
-            return problem_info
-        else:
-            print("  ⚠️ 문제 정보 추출 실패")
-            return None
-        
-    except Exception as e:
-        print(f"  ❌ 뷰포트 스크래핑 중 오류: {str(e)[:100]}...")
-        return None
-    finally:
-        if driver:
-            try:
-                print("  🔧 브라우저 정리 중...")
-                driver.quit()
-                print("  ✅ 브라우저 종료 완료")
-            except:
-                pass
-
 def scrape_boj_with_requests(problem_id):
-    """requests + BeautifulSoup을 사용한 가벼운 스크래핑 (백업 방법)"""
-    print("  🌊 requests 방식 스크래핑 시작 (백업 방법)...")
+    """requests + BeautifulSoup을 사용한 안정적 스크래핑"""
+    print("  🌊 requests + BeautifulSoup 스크래핑 시작...")
     
     try:
         url = f"https://www.acmicpc.net/problem/{problem_id}"
         
-        # User-Agent와 헤더 설정
+        # 다양한 User-Agent로 로테이션
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        ]
+        
+        import random
+        selected_ua = random.choice(user_agents)
+        
+        # 완전한 브라우저 헤더 시뮬레이션
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'ko-KR,ko;q=0.8,en-US;q=0.6,en;q=0.4',
+            'User-Agent': selected_ua,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
             'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Charset': 'utf-8',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
         }
         
         print(f"  → 요청 전송: {url}")
+        print(f"  🔧 User-Agent: {selected_ua[:50]}...")
         
-        # 세션을 사용해서 쿠키 유지
+        # 세션을 사용해서 쿠키 및 연결 유지
         session = requests.Session()
         session.headers.update(headers)
         
-        response = session.get(url, timeout=30)
-        response.raise_for_status()
-        
-        if response.status_code == 200:
-            print(f"  ✅ 페이지 로드 성공 (크기: {len(response.text):,} 문자)")
-            
-            # HTML 파싱
-            problem_info = extract_problem_info_from_html(response.text)
-            
-            if problem_info and len(problem_info.get('samples', [])) > 0:
-                print(f"  🎉 requests 스크래핑 성공! (샘플 {len(problem_info['samples'])}개)")
-                return problem_info
-            else:
-                print("  ⚠️ 문제 정보 추출 실패")
+        # 재시도 로직 내장
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = session.get(url, timeout=30, allow_redirects=True)
+                response.raise_for_status()
+                
+                if response.status_code == 200:
+                    print(f"  ✅ 페이지 로드 성공 (크기: {len(response.text):,} 문자)")
+                    
+                    # 페이지 유효성 검사
+                    if "존재하지 않는 문제" in response.text:
+                        print("  ❌ 존재하지 않는 문제")
+                        return None
+                    
+                    if len(response.text) < 1000:
+                        print("  ❌ 페이지 내용이 너무 짧음")
+                        return None
+                    
+                    # HTML 파싱
+                    problem_info = extract_problem_info_from_html(response.text)
+                    
+                    if problem_info and len(problem_info.get('samples', [])) > 0:
+                        print(f"  🎉 requests 스크래핑 성공! (샘플 {len(problem_info['samples'])}개)")
+                        return problem_info
+                    else:
+                        print("  ⚠️ 문제 정보 추출 실패, 재시도...")
+                        if attempt < max_retries:
+                            time.sleep(2)
+                            continue
+                        return None
+                else:
+                    print(f"  ❌ HTTP 오류: {response.status_code}")
+                    if attempt < max_retries:
+                        time.sleep(2)
+                        continue
+                    return None
+                    
+            except requests.exceptions.RequestException as e:
+                print(f"  ❌ 요청 오류 (시도 {attempt}/{max_retries}): {e}")
+                if attempt < max_retries:
+                    time.sleep(3)
+                    continue
                 return None
-        else:
-            print(f"  ❌ HTTP 오류: {response.status_code}")
-            return None
             
-    except requests.exceptions.RequestException as e:
-        print(f"  ❌ requests 오류: {e}")
-        return None
     except Exception as e:
         print(f"  ❌ 예외 발생: {e}")
         return None
 
-def scrape_boj_hybrid_approach(problem_id, max_attempts=3):
-    """하이브리드 접근법: Selenium 실패 시 requests 백업"""
-    print(f"  🔄 하이브리드 스크래핑 시작 (최대 {max_attempts}회 시도)")
-    
-    # 1차: Selenium 시도 (1-2회)
-    selenium_attempts = min(2, max_attempts)
-    print(f"\n  🌐 1단계: Selenium 방식 ({selenium_attempts}회 시도)")
-    
-    for attempt in range(1, selenium_attempts + 1):
-        print(f"  📍 Selenium 시도 {attempt}/{selenium_attempts}")
-        
-        if attempt > 1:
-            print("  ⏳ 3초 대기 후 재시도...")
-            time.sleep(3)
-        
-        result = scrape_boj_with_viewport(problem_id)
-        
-        if result and len(result.get('samples', [])) > 0:
-            print(f"  🎉 Selenium {attempt}번째 시도에서 성공!")
-            return result
-        else:
-            print(f"  ❌ Selenium {attempt}번째 시도 실패")
-    
-    # 2차: requests 백업 방법
-    remaining_attempts = max_attempts - selenium_attempts
-    if remaining_attempts > 0:
-        print(f"\n  🌊 2단계: requests 백업 방식 ({remaining_attempts}회 시도)")
-        
-        for attempt in range(1, remaining_attempts + 1):
-            print(f"  📍 requests 시도 {attempt}/{remaining_attempts}")
-            
-            if attempt > 1:
-                print("  ⏳ 2초 대기 후 재시도...")
-                time.sleep(2)
-            
-            result = scrape_boj_with_requests(problem_id)
-            
-            if result and len(result.get('samples', [])) > 0:
-                print(f"  🎉 requests {attempt}번째 시도에서 성공!")
-                return result
-            else:
-                print(f"  ❌ requests {attempt}번째 시도 실패")
-    
-    print("  💥 모든 방법 실패")
-    return None
-
-def scrape_boj_aggressive_retry(problem_id, max_attempts=5):
-    """적극적 재시도 전략"""
-    print(f"  🚀 적극적 뷰포트 스크래핑 모드 (최대 {max_attempts}회 시도)")
-    
-    delays = [3, 5, 8, 12, 15]  # 재시도 간격
+def scrape_boj_with_retry(problem_id, max_attempts=3):
+    """재시도 로직을 포함한 requests 스크래핑"""
+    print(f"  🔄 안정적 스크래핑 시작 (최대 {max_attempts}회 시도)")
     
     for attempt in range(1, max_attempts + 1):
-        print(f"\n  📍 시도 {attempt}/{max_attempts} (지연: {delays[attempt-1]}초)")
+        print(f"\n  📍 시도 {attempt}/{max_attempts}")
         
         if attempt > 1:
-            print(f"  ⏳ {delays[attempt-1]}초 대기 후 재시도...")
-            time.sleep(delays[attempt-1])
+            delay = 2 * attempt  # 2초, 4초, 6초...
+            print(f"  ⏳ {delay}초 대기 후 재시도...")
+            time.sleep(delay)
         
-        result = scrape_boj_with_viewport(problem_id)
+        result = scrape_boj_with_requests(problem_id)
         
         if result and len(result.get('samples', [])) > 0:
             print(f"  🎉 {attempt}번째 시도에서 성공!")
             return result
         else:
             if attempt < max_attempts:
-                print(f"  ❌ {attempt}번째 시도 실패, 다른 전략으로 재시도...")
+                print(f"  ❌ {attempt}번째 시도 실패, 재시도 준비...")
             else:
-                print(f"  💥 모든 전략 실패 ({max_attempts}회)")
+                print(f"  💥 모든 시도 실패 ({max_attempts}회)")
     
     return None
 
 def main():
-    parser = argparse.ArgumentParser(description='백준 문제 정보 수집 (GitHub Actions 최적화)')
+    parser = argparse.ArgumentParser(description='백준 문제 정보 수집 (requests 방식 - 안정적!)')
     parser.add_argument('--problem-id', required=True, help='백준 문제 번호')
     parser.add_argument('--retry-mode', choices=['basic', 'aggressive'], default='basic', 
                        help='재시도 모드 (basic: 3회, aggressive: 5회)')
@@ -439,38 +252,30 @@ def main():
     
     if is_github_actions:
         print("🤖 GitHub Actions 환경에서 실행 중")
-        print("  🌐 헤드리스 모드 + 뷰포트 시뮬레이션")
-        print("  ⚡ JavaScript 활성화로 자연스러운 환경 구현")
-        print("  🛡️ 고급 우회 기능 적용")
+        print("  🌊 requests + BeautifulSoup 방식 (안정적!)")
+        print("  ⚡ 빠르고 가벼우며 확실함")
+        print("  🔧 다양한 User-Agent 로테이션")
     else:
         print("🖥️ 로컬 환경에서 실행 중")
-        print("  👁️ 실제 뷰포트 모드 활성화")
-        print("  ⚡ JavaScript 및 이미지 로딩 활성화")
-        print("  🛡️ 고급 우회 기능 적용")
+        print("  🌊 requests + BeautifulSoup 방식")
+        print("  ⚡ Selenium 없이도 완벽 작동")
+        print("  🔧 고급 헤더 시뮬레이션")
     
     # 1. solved.ac API로 기본 정보 수집
     print("\n  → solved.ac API 호출...")
     solved_ac_info = get_solved_ac_info(problem_id)
     
-    # 2. 하이브리드 스크래핑 방식
+    # 2. requests 방식으로 스크래핑
     if args.retry_mode == 'aggressive':
-        # 적극적 모드: Selenium 3회 + requests 2회
-        print("\n  🚀 적극적 하이브리드 모드")
-        boj_info = scrape_boj_hybrid_approach(problem_id, max_attempts=5)
+        boj_info = scrape_boj_with_retry(problem_id, max_attempts=5)
     else:
-        # 기본 모드: Selenium 2회 + requests 1회  
-        print("\n  🔄 기본 하이브리드 모드")
-        boj_info = scrape_boj_hybrid_approach(problem_id, max_attempts=3)
+        boj_info = scrape_boj_with_retry(problem_id, max_attempts=3)
     
     # 3. 스크래핑 실패 시 처리
     if not boj_info:
         print("\n  ❌ 모든 스크래핑 시도 실패")
         print("  💡 문제 정보를 수동으로 확인해주세요:")
         print(f"     https://www.acmicpc.net/problem/{problem_id}")
-        
-        if is_github_actions:
-            print("  🤖 GitHub Actions 환경에서 스크래핑이 실패했습니다.")
-            print("      대안: requests + BeautifulSoup 방식 고려")
         
         boj_info = {
             "description": f"문제 {problem_id}의 상세 설명을 확인할 수 없습니다. 링크에서 직접 확인하세요.",
@@ -512,6 +317,7 @@ def main():
             print(f"  - 태그: {', '.join(complete_info['tags']) if complete_info['tags'] else 'N/A'}")
             print(f"  - 샘플 테스트: {len(complete_info['samples'])}개")
             print(f"  - 파일: problem_info.json, sample_tests.json")
+            print(f"  🎉 requests 방식이 Selenium보다 훨씬 안정적이네요!")
         else:
             print(f"\n⚠️ {environment} 정보 수집 부분적 완료:")
             print(f"  - 제목: {complete_info['title']} (Level: {complete_info['level']})")
