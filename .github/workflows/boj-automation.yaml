@@ -44,7 +44,15 @@ jobs:
 
       # 4. Python 의존성 설치
       - name: Install dependencies
-        run: pip install google-generativeai pytz selenium webdriver-manager beautifulsoup4 requests
+        run: |
+          pip install google-generativeai pytz selenium webdriver-manager beautifulsoup4 requests
+          
+          # Chrome 브라우저가 최신 버전인지 확인
+          google-chrome --version
+          
+          # 추가 시스템 패키지 설치 (필요 시)
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser chromium-chromedriver
 
       # 5. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
       - name: Extract problem and code info
@@ -119,123 +127,59 @@ jobs:
           else
             echo "README.md에 변경사항이 없어 커밋하지 않습니다."
           fi
-
-      # 12. 테스트 통과 시 Mattermost 알림 전송
+      # 12. 테스트 통과 시 Mattermost 알림 전송 (간단 버전)
       - name: Send Mattermost notification on success
         if: steps.run-tests.outputs.result == 'PASS'
         run: |
-          # JSON 페이로드를 임시 파일로 생성
-          cat > notification.json << 'EOF'
-          {
-            "channel": "algorithm-study",
-            "username": "BOJ-Bot",
-            "icon_emoji": ":white_check_mark:",
-            "text": "🎉 **테스트 통과!**",
-            "attachments": [
-              {
-                "color": "good",
-                "fields": [
-                  {
-                    "title": "문제 번호",
-                    "value": "PROBLEM_ID_PLACEHOLDER",
-                    "short": true
-                  },
-                  {
-                    "title": "해결자",
-                    "value": "AUTHOR_PLACEHOLDER",
-                    "short": true
-                  },
-                  {
-                    "title": "언어",
-                    "value": "LANGUAGE_PLACEHOLDER",
-                    "short": true
-                  },
-                  {
-                    "title": "PR 링크",
-                    "value": "[PR #PR_NUMBER_PLACEHOLDER](PR_URL_PLACEHOLDER)",
-                    "short": true
-                  }
-                ],
-                "text": "✅ 샘플 테스트 통과\n🤖 AI 생성 반례 테스트 통과\n📊 README.md 자동 업데이트\n👥 수동 병합 대기 중"
-              }
-            ]
-          }
-          EOF
+          MESSAGE="🎉 **Tests Passed!**
+          📝 **Problem:** ${{ steps.extract-info.outputs.problem_id }}
+          👤 **Solver:** ${{ steps.extract-info.outputs.author }}  
+          💻 **Language:** ${{ steps.extract-info.outputs.language }}
+          🔗 **PR:** [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})
           
-          # 플레이스홀더를 실제 값으로 치환
-          sed -i "s/PROBLEM_ID_PLACEHOLDER/${{ steps.extract-info.outputs.problem_id }}/g" notification.json
-          sed -i "s/AUTHOR_PLACEHOLDER/${{ steps.extract-info.outputs.author }}/g" notification.json
-          sed -i "s/LANGUAGE_PLACEHOLDER/${{ steps.extract-info.outputs.language }}/g" notification.json
-          sed -i "s/PR_NUMBER_PLACEHOLDER/${{ github.event.pull_request.number }}/g" notification.json
-          sed -i "s|PR_URL_PLACEHOLDER|${{ github.event.pull_request.html_url }}|g" notification.json
+          ✅ Sample tests passed
+          🤖 AI generated edge case tests passed  
+          📊 README.md auto-updated
+          👥 Ready for manual merge"
           
-          # curl로 전송
-          curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -d @notification.json \
-            --fail-with-body
-            
-      # 13. 테스트 실패 시 Mattermost 알림 전송
+          jq -n --arg text "$MESSAGE" \
+            '{
+              channel: "algorithm-study",
+              username: "BOJ-Bot",
+              icon_emoji: ":white_check_mark:", 
+              text: $text
+            }' | curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+              -H "Content-Type: application/json" \
+              -d @- \
+              --silent --show-error --fail
+
+      # 13. 테스트 실패 시 Mattermost 알림 전송 (간단 버전)  
       - name: Send Mattermost notification on failure
         if: steps.run-tests.outputs.result == 'FAIL'
         run: |
-          # 실패 세부사항을 안전하게 처리
-          DETAILS="${{ steps.run-tests.outputs.details }}"
-          # JSON에서 특수문자 이스케이프
-          DETAILS_ESCAPED=$(echo "$DETAILS" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+          MESSAGE="❌ **Tests Failed**
+          📝 **Problem:** ${{ steps.extract-info.outputs.problem_id }}
+          👤 **Submitter:** ${{ steps.extract-info.outputs.author }}
+          💻 **Language:** ${{ steps.extract-info.outputs.language }} 
+          🔗 **PR:** [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})
           
-          # jq를 사용하여 안전한 JSON 생성
-          jq -n \
-            --arg channel "algorithm-study" \
-            --arg username "BOJ-Bot" \
-            --arg icon_emoji ":x:" \
-            --arg text "❌ **테스트 실패**" \
-            --arg problem_id "${{ steps.extract-info.outputs.problem_id }}" \
-            --arg author "${{ steps.extract-info.outputs.author }}" \
-            --arg language "${{ steps.extract-info.outputs.language }}" \
-            --arg pr_number "${{ github.event.pull_request.number }}" \
-            --arg pr_url "${{ github.event.pull_request.html_url }}" \
-            --arg details "$DETAILS_ESCAPED" \
+          **Error Details:**
+          \`\`\`
+          ${{ steps.run-tests.outputs.details }}
+          \`\`\`
+          
+          💪 Please fix the code and push again!"
+          
+          jq -n --arg text "$MESSAGE" \
             '{
-              channel: $channel,
-              username: $username,
-              icon_emoji: $icon_emoji,
-              text: $text,
-              attachments: [
-                {
-                  color: "danger",
-                  fields: [
-                    {
-                      title: "문제 번호",
-                      value: $problem_id,
-                      short: true
-                    },
-                    {
-                      title: "제출자",
-                      value: $author,
-                      short: true
-                    },
-                    {
-                      title: "언어",
-                      value: $language,
-                      short: true
-                    },
-                    {
-                      title: "PR 링크",
-                      value: "[PR #\($pr_number)](\($pr_url))",
-                      short: true
-                    }
-                  ],
-                  text: "```\n\($details)\n```\n💪 코드를 수정한 후 다시 푸시해주세요!"
-                }
-              ]
-            }' > notification.json
-          
-          # curl로 전송
-          curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -d @notification.json \
-            --fail-with-body
+              channel: "algorithm-study", 
+              username: "BOJ-Bot",
+              icon_emoji: ":x:",
+              text: $text  
+            }' | curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+              -H "Content-Type: application/json" \
+              -d @- \
+              --silent --show-error --fail
 
       # 14. PR에 테스트 결과 댓글 작성
       - name: Comment test results
