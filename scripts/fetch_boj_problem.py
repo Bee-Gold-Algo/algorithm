@@ -207,7 +207,7 @@ def scrape_boj_optimized(problem_id):
 
         # problem-body가 로드될 때까지 대기 (이미지에서 확인된 구조)
         try:
-            WebDriverWait(driver, 15).until(
+            WebDriverWait(driver, 60).until(
                 EC.presence_of_element_located((By.ID, "problem-body"))
             )
             print("  ✅ 페이지 로드 완료")
@@ -215,7 +215,7 @@ def scrape_boj_optimized(problem_id):
             print("  ⚠️ problem-body 요소를 찾지 못했습니다. 일반적인 방법으로 진행...")
         
         # 추가 로딩 대기
-        time.sleep(2)
+        time.sleep(5)
 
         # HTML 소스 가져오기
         html_content = driver.page_source

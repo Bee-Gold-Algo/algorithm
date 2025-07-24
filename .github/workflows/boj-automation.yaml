@@ -132,7 +132,7 @@ jobs:
       - name: Send Mattermost notification on success
         if: steps.run-tests.outputs.result == 'PASS'
         run: |
-          curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+          curl -X POST `"${{ secrets.MATTERMOST_WEBHOOK_URL }}"` \
             -H "Content-Type: application/json" \
             -d "{
               \"channel\": \"algorithm-study\",
@@ -146,7 +146,7 @@ jobs:
       - name: Send Mattermost notification on failure
         if: steps.run-tests.outputs.result == 'FAIL'
         run: |
-          curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+          curl -X POST `"${{ secrets.MATTERMOST_WEBHOOK_URL }}"` \
             -H "Content-Type: application/json" \
             -d "{
               \"channel\": \"algorithm-study\",
