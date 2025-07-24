@@ -110,8 +110,8 @@ jobs:
       - name: Commit and Push README changes
         if: steps.run-tests.outputs.result == 'PASS'
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config --local user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
+          git config --local user.name "${{ github.event.pull_request.user.login }}"
           git add README.md
           if ! git diff --cached --quiet; then
             git commit -m "📊 Update progress: Problem ${{ steps.extract-info.outputs.problem_id }} solved by ${{ steps.extract-info.outputs.author }}"
@@ -126,48 +126,49 @@ jobs:
         run: |
           curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \
-            -d "{\"payload\": {
-                          \"channel\": \"algorithm-study\",
-                          \"username\": \"BOJ-Bot\",
-                          \"icon_emoji\": \":white_check_mark:\",
-                          \"text\": \"🎉 **테스트 통과!**\",
-                          \"attachments\": [
-                            {
-                              \"color\": \"good\",
-                              \"fields\": [
-                                {
-                                  \"title\": \"문제 번호\",
-                                  \"value\": \"${{ steps.extract-info.outputs.problem_id }}\",
-                                  \"short\": true
-                                },
-                                {
-                                  \"title\": \"해결자\",
-                                  \"value\": \"${{ steps.extract-info.outputs.author }}\",
-                                  \"short\": true
-                                },
-                                {
-                                  \"title\": \"언어\",
-                                  \"value\": \"${{ steps.extract-info.outputs.language }}\",
-                                  \"short\": true
-                                },
-                                {
-                                  \"title\": \"PR 링크\",
-                                  \"value\": \"[PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})\",
-                                  \"short\": true
-                                }
-                              ],
-                              \"text\": \"✅ 샘플 테스트 통과\\n🤖 AI 생성 반례 테스트 통과\\n📊 README.md 자동 업데이트\\n👥 수동 병합 대기 중\"
-                            }
-                          ]
-                        }}"
+            -d '{
+              "channel": "algorithm-study",
+              "username": "BOJ-Bot",
+              "icon_emoji": ":white_check_mark:",
+              "text": "🎉 **테스트 통과!**",
+              "attachments": [
+                {
+                  "color": "good",
+                  "fields": [
+                    {
+                      "title": "문제 번호",
+                      "value": "${{ steps.extract-info.outputs.problem_id }}",
+                      "short": true
+                    },
+                    {
+                      "title": "해결자",
+                      "value": "${{ steps.extract-info.outputs.author }}",
+                      "short": true
+                    },
+                    {
+                      "title": "언어",
+                      "value": "${{ steps.extract-info.outputs.language }}",
+                      "short": true
+                    },
+                    {
+                      "title": "PR 링크",
+                      "value": "[PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})",
+                      "short": true
+                    }
+                  ],
+                  "text": "✅ 샘플 테스트 통과\n🤖 AI 생성 반례 테스트 통과\n📊 README.md 자동 업데이트\n👥 수동 병합 대기 중"
+                }
+              ]
+            }'
 
       # 13. 테스트 실패 시 Mattermost 알림 전송
       - name: Send Mattermost notification on failure
         if: steps.run-tests.outputs.result == 'FAIL'
         run: |
+          DETAILS="${{ steps.run-tests.outputs.details }}"
           curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \
-            -d "{\"payload\": {
+            -d "{
               \"channel\": \"algorithm-study\",
               \"username\": \"BOJ-Bot\",
               \"icon_emoji\": \":x:\",
@@ -200,7 +201,7 @@ jobs:
                   \"text\": \"\`\`\`\\n${DETAILS}\\n\`\`\`\\n💪 코드를 수정한 후 다시 푸시해주세요!\"
                 }
               ]
-            }}"
+            }"
 
       # 14. PR에 테스트 결과 댓글 작성
       - name: Comment test results
