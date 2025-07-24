@@ -127,59 +127,34 @@ jobs:
           else
             echo "README.md에 변경사항이 없어 커밋하지 않습니다."
           fi
-      # 12. 테스트 통과 시 Mattermost 알림 전송 (간단 버전)
+
+      # 12. 테스트 통과 시 Mattermost 알림 전송
       - name: Send Mattermost notification on success
         if: steps.run-tests.outputs.result == 'PASS'
         run: |
-          MESSAGE="🎉 **Tests Passed!**
-          📝 **Problem:** ${{ steps.extract-info.outputs.problem_id }}
-          👤 **Solver:** ${{ steps.extract-info.outputs.author }}  
-          💻 **Language:** ${{ steps.extract-info.outputs.language }}
-          🔗 **PR:** [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})
-          
-          ✅ Sample tests passed
-          🤖 AI generated edge case tests passed  
-          📊 README.md auto-updated
-          👥 Ready for manual merge"
-          
-          jq -n --arg text "$MESSAGE" \
-            '{
-              channel: "algorithm-study",
-              username: "BOJ-Bot",
-              icon_emoji: ":white_check_mark:", 
-              text: $text
-            }' | curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
-              -H "Content-Type: application/json" \
-              -d @- \
-              --silent --show-error --fail
+          curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"channel\": \"algorithm-study\",
+              \"username\": \"BOJ-Bot\",
+              \"icon_emoji\": \":white_check_mark:\",
+              \"text\": \"🎉 **Tests Passed!** Problem: ${{ steps.extract-info.outputs.problem_id }} | Solver: ${{ steps.extract-info.outputs.author }} | Language: ${{ steps.extract-info.outputs.language }} | [PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}) ✅ All tests passed, README updated, ready for merge!\"
+            }" \
+            --silent --show-error --fail
 
-      # 13. 테스트 실패 시 Mattermost 알림 전송 (간단 버전)  
+      # 13. 테스트 실패 시 Mattermost 알림 전송
       - name: Send Mattermost notification on failure
         if: steps.run-tests.outputs.result == 'FAIL'
         run: |
-          MESSAGE="❌ **Tests Failed**
-          📝 **Problem:** ${{ steps.extract-info.outputs.problem_id }}
-          👤 **Submitter:** ${{ steps.extract-info.outputs.author }}
-          💻 **Language:** ${{ steps.extract-info.outputs.language }} 
-          🔗 **PR:** [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})
-          
-          **Error Details:**
-          \`\`\`
-          ${{ steps.run-tests.outputs.details }}
-          \`\`\`
-          
-          💪 Please fix the code and push again!"
-          
-          jq -n --arg text "$MESSAGE" \
-            '{
-              channel: "algorithm-study", 
-              username: "BOJ-Bot",
-              icon_emoji: ":x:",
-              text: $text  
-            }' | curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
-              -H "Content-Type: application/json" \
-              -d @- \
-              --silent --show-error --fail
+          curl -X POST "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"channel\": \"algorithm-study\",
+              \"username\": \"BOJ-Bot\",
+              \"icon_emoji\": \":x:\",
+              \"text\": \"❌ **Tests Failed** Problem: ${{ steps.extract-info.outputs.problem_id }} | Submitter: ${{ steps.extract-info.outputs.author }} | [PR #${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}) 💪 Please fix and push again!\"
+            }" \
+            --silent --show-error --fail
 
       # 14. PR에 테스트 결과 댓글 작성
       - name: Comment test results
