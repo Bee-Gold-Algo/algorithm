@@ -156,12 +156,14 @@ def scrape_with_playwright(problem_id: str, max_retries: int = 3):
                     headless=True,
                     args=["--no-sandbox", "--disable-dev-shm-usage"]
                 )
+                # `default_timeout` 인자를 제거하여 오류를 해결합니다.
                 context = browser.new_context(
                     user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    viewport={'width': 1920, 'height': 1080},
-                    default_timeout=60000 
+                    viewport={'width': 1920, 'height': 1080}
                 )
                 page = context.new_page()
+                # 페이지별 타임아웃은 page.goto 등에서 개별적으로 설정합니다.
+                page.set_default_timeout(60000)
 
                 print("  → 페이지 접속 및 기본 콘텐츠 로드 대기...")
                 page.goto(url, wait_until='domcontentloaded', timeout=90000)
