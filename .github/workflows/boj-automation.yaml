@@ -171,7 +171,7 @@ jobs:
             echo "📊 테스트 결과 분석 중..."
             
             # Python으로 결과 분석
-            python << 'EOF'
+            cat > analyze_results.py << 'SCRIPT'
 import json
 import os
 
@@ -195,7 +195,8 @@ with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
 
 print(f'전체 결과: {"성공" if overall_success else "실패"}')
 print(f'성공/부분성공: {passed_problems + partial_passed}/{total_problems}')
-EOF
+SCRIPT
+            python analyze_results.py
           else
             echo "❌ 테스트 결과 파일을 찾을 수 없습니다."
             echo "overall_result=FAIL" >> $GITHUB_OUTPUT
@@ -208,7 +209,7 @@ EOF
         run: |
           if [ -f "test_results_summary.json" ]; then
             echo "📊 테스트 결과 분석 중..."
-            python << 'EOF'
+            cat > update_readme.py << 'SCRIPT'
 import json
 import subprocess
 import sys
@@ -249,7 +250,8 @@ except FileNotFoundError:
 except Exception as e:
     print(f'❌ README 업데이트 중 오류: {e}')
     sys.exit(1)
-EOF
+SCRIPT
+            python update_readme.py
           fi
 
       # 11. 테스트 완료 확인
@@ -291,7 +293,7 @@ EOF
           echo "📢 성공 알림 전송 중..."
           
           # Python으로 상세한 알림 메시지 생성
-          python << 'EOF'
+          cat > success_notification.py << 'SCRIPT'
 import json
 import subprocess
 import os
@@ -368,7 +370,8 @@ try:
     
 except Exception as e:
     print(f'❌ 알림 전송 실패: {e}')
-EOF
+SCRIPT
+          python success_notification.py
 
       # 16. 상세한 실패 알림 전송
       - name: Send detailed failure notification
@@ -377,7 +380,7 @@ EOF
           echo "📢 실패 알림 전송 중..."
           
           # Python으로 상세한 실패 알림 메시지 생성
-          python << 'EOF'
+          cat > failure_notification.py << 'SCRIPT'
 import json
 import subprocess
 import os
@@ -448,7 +451,8 @@ try:
     
 except Exception as e:
     print(f'❌ 알림 전송 실패: {e}')
-EOF
+SCRIPT
+          python failure_notification.py
 
       # 17. PR에 상세한 테스트 결과 댓글 작성
       - name: Comment detailed test results
