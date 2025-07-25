@@ -1,184 +1,377 @@
 #!/usr/bin/env python3
 """
 scripts/test_runner.py
-샘플 테스트와 AI 생성 테스트를 실행합니다.
+향상된 테스트 실행 및 상세 결과 제공
 """
 
 import argparse
 import json
 import subprocess
-import os
 import sys
+import os
+import tempfile
+import time
 from pathlib import Path
 
-def write_output(key, value):
-    """GitHub Actions의 다음 단계로 출력을 전달합니다."""
-    # 줄바꿈 문자를 이스케이프 처리하여 여러 줄의 오류 메시지를 안전하게 전달
-    value = value.replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D')
-    if 'GITHUB_OUTPUT' in os.environ:
-        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-            f.write(f"{key}={value}\n")
-    else:
-        # 로컬 테스트를 위한 레거시 출력 방식
-        print(f"::set-output name={key}::{value}")
+class TestResult:
+    def __init__(self):
+        self.sample_tests = {
+            'total': 0,
+            'passed': 0,
+            'failed': 0,
+            'details': []
+        }
+        self.generated_tests = {
+            'total': 0,
+            'passed': 0,
+            'failed': 0,
+            'details': []
+        }
+        self.compilation_success = False
+        self.compilation_error = ""
+        self.overall_result = "FAIL"
+        self.error_messages = []
+        self.execution_time = 0
 
-class TestRunner:
-    def __init__(self, code_file, language):
-        self.code_file = code_file
-        self.language = language
-        self.failed_tests = []
-        self.executable = None
-        self.java_class_path = None
-
-    def compile_if_needed(self):
-        """컴파일이 필요한 언어의 경우 컴파일 실행"""
-        if self.language == 'java':
-            try:
-                code_path = Path(self.code_file)
-                # 클래스 파일이 생성될 디렉토리와 클래스 이름을 저장
-                self.java_class_path = code_path.parent
-                self.executable = code_path.stem  # e.g., 'Main'
-
-                result = subprocess.run(
-                    ['javac', str(code_path)],
-                    capture_output=True, text=True, timeout=30, check=True
-                )
-                return True, "컴파일 성공"
-            except subprocess.CalledProcessError as e:
-                return False, f"컴파일 오류:\n{e.stderr}"
-            except Exception as e:
-                return False, f"컴파일 예외: {e}"
-        # 다른 컴파일 언어 로직 (예: cpp)은 여기에 추가 가능
-        return True, "컴파일 불필요"
-
-    def run_single_test(self, test_input, timeout=5):
-        """단일 테스트케이스 실행"""
-        cmd = []
-        try:
-            if self.language == 'python':
-                cmd = ['python3', self.code_file]
-            elif self.language == 'java':
-                # -cp 옵션으로 클래스 경로를 지정해야 올바르게 실행됨
-                cmd = ['java', '-cp', str(self.java_class_path), self.executable]
-            else:
-                return False, f"지원하지 않는 언어: {self.language}"
-
-            process = subprocess.run(
-                cmd, input=test_input, capture_output=True,
-                text=True, timeout=timeout
-            )
-            if process.returncode != 0:
-                error_msg = process.stderr or "런타임 오류 발생"
-                return False, f"실행 오류: {error_msg.strip()}"
-            
-            # 성공 시 (True, 실행 결과) 반환
-            return True, process.stdout.strip()
-        
-        # ⭐️ 들여쓰기 수정 및 예외 처리 강화 ⭐️
-        except subprocess.TimeoutExpired:
-            return False, f"{timeout}초 시간 초과"
-        except Exception as e:
-            return False, f"실행 중 예외 발생: {e}"
-
-    def run_tests_from_file(self, file_path, test_type):
-        """파일로부터 테스트케이스 목록을 읽어와 실행"""
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            test_cases = data.get('test_cases', [])
-            if not test_cases:
-                return True, f"{test_type} 테스트케이스 없음"
-            
-            print(f"🔄 {test_type} 테스트 실행 중... ({len(test_cases)}개)")
-            
-            for i, case in enumerate(test_cases):
-                test_input = case.get('input', '')
-                expected_output = case.get('output', '')
-                
-                success, actual_output = self.run_single_test(test_input)
-                
-                if not success:
-                    # 실행 자체가 실패한 경우
-                    self.failed_tests.append({'type': test_type, 'case_number': i + 1, 'input': test_input, 'error': actual_output})
-                    return False, f"{test_type} 테스트 {i + 1} 실행 실패"
-
-                if test_type == "샘플": # 샘플 테스트만 정답 비교
-                    if actual_output.strip() != expected_output.strip():
-                        self.failed_tests.append({'type': test_type, 'case_number': i + 1, 'input': test_input, 'expected': expected_output, 'actual': actual_output})
-                        return False, f"{test_type} 테스트 {i + 1} 출력 불일치"
-            
-            return True, f"{test_type} 테스트 {len(test_cases)}개 모두 통과"
-        except Exception as e:
-            return False, f"{test_type} 테스트 로드/실행 실패: {e}"
-
-    def cleanup(self):
-        """컴파일된 .class 파일 등 임시 파일 정리"""
-        if self.language == 'java' and self.java_class_path:
-            class_file = self.java_class_path / f"{self.executable}.class"
-            if class_file.exists():
-                class_file.unlink()
-
-def format_failure_details(failed_tests):
-    """실패한 테스트 상세 정보 포맷팅"""
-    if not failed_tests: return ""
-    test = failed_tests[0] # 첫 번째 실패만 자세히 표시
-    if 'error' in test:
-        return f"{test['type']} 테스트 {test['case_number']} 오류:\n{test['error']}"
-    else:
-        return (f"{test['type']} 테스트 {test['case_number']} 불일치:\n"
-                f"  입력: {test['input']}\n"
-                f"  예상: {test['expected']}\n"
-                f"  실제: {test['actual']}")
-
-def main():
-    parser = argparse.ArgumentParser(description='테스트케이스 실행')
-    parser.add_argument('--code-file', required=True)
-    parser.add_argument('--language', required=True)
-    parser.add_argument('--sample-tests', required=True)
-    parser.add_argument('--generated-tests', required=True)
-    args = parser.parse_args()
-    
-    runner = TestRunner(args.code_file, args.language)
+def compile_java_code(code_file):
+    """Java 코드를 컴파일합니다."""
+    print(f"⚙️ Java 코드 컴파일 중: {code_file}")
     
     try:
-        print(f"🚀 테스트 시작: {args.code_file} ({args.language})")
+        # 컴파일 명령어 실행
+        result = subprocess.run(
+            ['javac', code_file],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
         
-        # 1. 컴파일
-        success, msg = runner.compile_if_needed()
-        if not success:
-            print(f"::error::{msg}")
-            write_output("result", "FAIL")
-            write_output("details", msg)
-            sys.exit(1)
-        print(f"✅ {msg}")
-        
-        # 2. 샘플 테스트
-        success, msg = runner.run_tests_from_file(args.sample_tests, "샘플")
-        if not success:
-            details = format_failure_details(runner.failed_tests)
-            print(f"::error::{msg}\n{details}")
-            write_output("result", "FAIL")
-            write_output("details", details)
-            sys.exit(1)
-        print(f"✅ {msg}")
-        
-        # 3. AI 생성 테스트
-        success, msg = runner.run_tests_from_file(args.generated_tests, "AI 생성")
-        if not success:
-            details = format_failure_details(runner.failed_tests)
-            # AI 테스트는 실패해도 경고만 하고 통과 처리
-            print(f"::warning::{msg}\n{details}")
+        if result.returncode == 0:
+            print("✅ 컴파일 성공")
+            return True, ""
         else:
-            print(f"✅ {msg}")
+            error_msg = result.stderr or result.stdout or "알 수 없는 컴파일 오류"
+            print(f"❌ 컴파일 실패: {error_msg}")
+            return False, error_msg
+            
+    except subprocess.TimeoutExpired:
+        error_msg = "컴파일 시간 초과 (30초)"
+        print(f"❌ {error_msg}")
+        return False, error_msg
+    except Exception as e:
+        error_msg = f"컴파일 중 오류: {str(e)}"
+        print(f"❌ {error_msg}")
+        return False, error_msg
+
+def run_java_program(class_name, input_data, timeout=5):
+    """Java 프로그램을 실행하고 결과를 반환합니다."""
+    try:
+        start_time = time.time()
         
-        # 최종 통과
-        print("🎉 모든 테스트 통과!")
-        write_output("result", "PASS")
-        write_output("details", "모든 테스트케이스 통과")
+        process = subprocess.run(
+            ['java', class_name],
+            input=input_data,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
         
+        execution_time = time.time() - start_time
+        
+        if process.returncode == 0:
+            return True, process.stdout.strip(), execution_time, ""
+        else:
+            error_msg = process.stderr or "프로그램 실행 오류"
+            return False, "", execution_time, error_msg
+            
+    except subprocess.TimeoutExpired:
+        return False, "", timeout, f"실행 시간 초과 ({timeout}초)"
+    except Exception as e:
+        return False, "", 0, f"실행 중 오류: {str(e)}"
+
+def normalize_output(output):
+    """출력을 정규화합니다."""
+    if not output:
+        return ""
+    
+    # 공백 정리 및 줄바꿈 정규화
+    lines = output.strip().split('\n')
+    normalized_lines = [line.strip() for line in lines]
+    return '\n'.join(normalized_lines)
+
+def compare_outputs(expected, actual):
+    """출력을 비교합니다."""
+    expected_norm = normalize_output(expected)
+    actual_norm = normalize_output(actual)
+    
+    return expected_norm == actual_norm
+
+def run_single_test(class_name, test_case, test_type, test_index):
+    """단일 테스트케이스를 실행합니다."""
+    input_data = test_case.get('input', '')
+    expected_output = test_case.get('output', '')
+    description = test_case.get('description', f'{test_type} 테스트 {test_index + 1}')
+    
+    print(f"  🧪 {description}")
+    print(f"     입력: {repr(input_data)}")
+    print(f"     예상: {repr(expected_output)}")
+    
+    # 프로그램 실행
+    success, actual_output, exec_time, error_msg = run_java_program(class_name, input_data)
+    
+    if not success:
+        print(f"     ❌ 실행 실패: {error_msg}")
+        return {
+            'passed': False,
+            'input': input_data,
+            'expected': expected_output,
+            'actual': '',
+            'error': error_msg,
+            'execution_time': exec_time,
+            'description': description
+        }
+    
+    print(f"     실제: {repr(actual_output)}")
+    print(f"     시간: {exec_time:.3f}초")
+    
+    # 출력 비교
+    if compare_outputs(expected_output, actual_output):
+        print(f"     ✅ 통과")
+        return {
+            'passed': True,
+            'input': input_data,
+            'expected': expected_output,
+            'actual': actual_output,
+            'error': '',
+            'execution_time': exec_time,
+            'description': description
+        }
+    else:
+        print(f"     ❌ 실패 - 출력 불일치")
+        return {
+            'passed': False,
+            'input': input_data,
+            'expected': expected_output,
+            'actual': actual_output,
+            'error': '출력 불일치',
+            'execution_time': exec_time,
+            'description': description
+        }
+
+def run_test_suite(class_name, test_cases, test_type):
+    """테스트 스위트를 실행합니다."""
+    print(f"\n📋 {test_type} 테스트 실행 ({len(test_cases)}개)")
+    
+    results = {
+        'total': len(test_cases),
+        'passed': 0,
+        'failed': 0,
+        'details': []
+    }
+    
+    if not test_cases:
+        print(f"  ⚠️ {test_type} 테스트케이스가 없습니다.")
+        return results
+    
+    for i, test_case in enumerate(test_cases):
+        test_result = run_single_test(class_name, test_case, test_type, i)
+        results['details'].append(test_result)
+        
+        if test_result['passed']:
+            results['passed'] += 1
+        else:
+            results['failed'] += 1
+    
+    print(f"📊 {test_type} 테스트 결과: {results['passed']}/{results['total']} 통과")
+    
+    return results
+
+def load_test_cases(file_path):
+    """테스트케이스 파일을 로드합니다."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get('test_cases', [])
+    except FileNotFoundError:
+        print(f"⚠️ 테스트 파일 없음: {file_path}")
+        return []
+    except Exception as e:
+        print(f"❌ 테스트 파일 로드 실패 ({file_path}): {e}")
+        return []
+
+def generate_detailed_report(result, code_file):
+    """상세한 테스트 리포트를 생성합니다."""
+    total_tests = result.sample_tests['total'] + result.generated_tests['total']
+    total_passed = result.sample_tests['passed'] + result.generated_tests['passed']
+    
+    report = []
+    report.append(f"📋 테스트 결과 상세 리포트")
+    report.append(f"=" * 50)
+    report.append(f"파일: {code_file}")
+    report.append(f"컴파일: {'성공' if result.compilation_success else '실패'}")
+    
+    if not result.compilation_success:
+        report.append(f"컴파일 오류: {result.compilation_error}")
+        return '\n'.join(report)
+    
+    report.append(f"전체 테스트: {total_passed}/{total_tests} 통과")
+    report.append(f"샘플 테스트: {result.sample_tests['passed']}/{result.sample_tests['total']} 통과")
+    report.append(f"생성 테스트: {result.generated_tests['passed']}/{result.generated_tests['total']} 통과")
+    report.append(f"전체 결과: {result.overall_result}")
+    
+    # 실패한 테스트케이스 상세 정보
+    failed_tests = []
+    
+    for detail in result.sample_tests['details']:
+        if not detail['passed']:
+            failed_tests.append(f"샘플 - {detail['description']}: {detail['error']}")
+    
+    for detail in result.generated_tests['details']:
+        if not detail['passed']:
+            failed_tests.append(f"생성 - {detail['description']}: {detail['error']}")
+    
+    if failed_tests:
+        report.append(f"\n❌ 실패한 테스트케이스:")
+        for i, fail in enumerate(failed_tests[:5], 1):  # 최대 5개까지만
+            report.append(f"  {i}. {fail}")
+        if len(failed_tests) > 5:
+            report.append(f"  ... 외 {len(failed_tests) - 5}개 더")
+    
+    # 오류 메시지
+    if result.error_messages:
+        report.append(f"\n🚨 오류 메시지:")
+        for i, error in enumerate(result.error_messages[:3], 1):  # 최대 3개까지만
+            report.append(f"  {i}. {error}")
+    
+    return '\n'.join(report)
+
+def main():
+    """메인 실행 함수"""
+    parser = argparse.ArgumentParser(description='향상된 테스트 실행기')
+    parser.add_argument('--code-file', required=True, help='테스트할 코드 파일')
+    parser.add_argument('--language', required=True, help='프로그래밍 언어')
+    parser.add_argument('--sample-tests', required=True, help='샘플 테스트 파일')
+    parser.add_argument('--generated-tests', required=True, help='생성된 테스트 파일')
+    args = parser.parse_args()
+    
+    print(f"🚀 테스트 실행 시작: {args.code_file}")
+    
+    result = TestResult()
+    
+    # 현재는 Java만 지원
+    if args.language.lower() != 'java':
+        print(f"❌ 지원하지 않는 언어: {args.language}")
+        result.error_messages.append(f"지원하지 않는 언어: {args.language}")
+        sys.exit(1)
+    
+    # 코드 파일 존재 확인
+    if not os.path.exists(args.code_file):
+        print(f"❌ 코드 파일을 찾을 수 없습니다: {args.code_file}")
+        result.error_messages.append(f"코드 파일 없음: {args.code_file}")
+        sys.exit(1)
+    
+    # Java 코드 컴파일
+    compilation_success, compilation_error = compile_java_code(args.code_file)
+    result.compilation_success = compilation_success
+    result.compilation_error = compilation_error
+    
+    if not compilation_success:
+        result.error_messages.append(f"컴파일 실패: {compilation_error}")
+        result.overall_result = "COMPILATION_ERROR"
+        
+        # 상세 리포트 출력
+        report = generate_detailed_report(result, args.code_file)
+        print(f"\n{report}")
+        
+        # GitHub Actions Output 설정
+        if 'GITHUB_OUTPUT' in os.environ:
+            with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+                f.write(f"result=FAIL\n")
+                f.write(f"details={compilation_error}\n")
+        
+        sys.exit(1)
+    
+    # 클래스 이름 추출 (파일명에서 .java 제거)
+    class_name = Path(args.code_file).stem
+    
+    try:
+        # 테스트케이스 로드
+        sample_test_cases = load_test_cases(args.sample_tests)
+        generated_test_cases = load_test_cases(args.generated_tests)
+        
+        # 샘플 테스트 실행
+        result.sample_tests = run_test_suite(class_name, sample_test_cases, "샘플")
+        
+        # 생성된 테스트 실행
+        result.generated_tests = run_test_suite(class_name, generated_test_cases, "생성")
+        
+        # 전체 결과 판정
+        sample_all_passed = (result.sample_tests['total'] > 0 and 
+                           result.sample_tests['failed'] == 0)
+        
+        generated_any_passed = result.generated_tests['passed'] > 0
+        
+        if sample_all_passed:
+            if generated_any_passed or result.generated_tests['total'] == 0:
+                result.overall_result = "PASS"
+            else:
+                result.overall_result = "PARTIAL_PASS"  # 샘플은 통과했지만 생성 테스트 실패
+        elif result.sample_tests['passed'] > 0:
+            result.overall_result = "PARTIAL_PASS"  # 샘플 일부 통과
+        else:
+            result.overall_result = "FAIL"  # 샘플 테스트 모두 실패
+        
+        # 상세 리포트 생성 및 출력
+        report = generate_detailed_report(result, args.code_file)
+        print(f"\n{report}")
+        
+        # GitHub Actions Output 설정
+        if 'GITHUB_OUTPUT' in os.environ:
+            with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+                f.write(f"result={result.overall_result}\n")
+                
+                # 실패 시 상세 정보 제공
+                if result.overall_result in ["FAIL", "PARTIAL_PASS"]:
+                    details = []
+                    if result.sample_tests['failed'] > 0:
+                        details.append(f"샘플 테스트 {result.sample_tests['failed']}개 실패")
+                    if result.generated_tests['failed'] > 0:
+                        details.append(f"생성 테스트 {result.generated_tests['failed']}개 실패")
+                    if result.error_messages:
+                        details.extend(result.error_messages[:2])
+                    
+                    details_str = " | ".join(details)
+                    f.write(f"details={details_str}\n")
+                else:
+                    f.write(f"details=모든 테스트 통과\n")
+        
+        # 성공 조건: PASS 또는 PARTIAL_PASS
+        success = result.overall_result in ["PASS", "PARTIAL_PASS"]
+        sys.exit(0 if success else 1)
+        
+    except Exception as e:
+        error_msg = f"테스트 실행 중 오류: {str(e)}"
+        print(f"❌ {error_msg}")
+        result.error_messages.append(error_msg)
+        result.overall_result = "ERROR"
+        
+        # GitHub Actions Output 설정
+        if 'GITHUB_OUTPUT' in os.environ:
+            with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+                f.write(f"result=FAIL\n")
+                f.write(f"details={error_msg}\n")
+        
+        sys.exit(1)
+    
     finally:
-        runner.cleanup()
+        # 컴파일된 .class 파일 정리
+        try:
+            class_file = Path(args.code_file).with_suffix('.class')
+            if class_file.exists():
+                class_file.unlink()
+                print(f"🧹 정리 완료: {class_file}")
+        except Exception as e:
+            print(f"⚠️ 파일 정리 실패: {e}")
 
 if __name__ == "__main__":
     main()

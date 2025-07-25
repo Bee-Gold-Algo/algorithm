@@ -1,235 +1,183 @@
-# scripts/extract_pr_info.py
+#!/usr/bin/env python3
+"""
+scripts/extract_pr_info.py
+PR에서 여러 문제와 코드 정보를 추출합니다.
+"""
+
 import os
 import re
-import sys
 import json
-import subprocess
+import sys
+import requests
+from pathlib import Path
 
-def get_pr_info(pr_number, repo):
-    """PR 기본 정보를 가져옵니다."""
-    print(f"🔍 PR #{pr_number} 기본 정보 조회 중...")
+def get_changed_files_from_api():
+    """GitHub API를 사용하여 PR의 변경된 파일 목록을 가져옵니다."""
     try:
-        command = ['gh', 'api', f'/repos/{repo}/pulls/{pr_number}']
-        result = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8')
-        pr_data = json.loads(result.stdout)
+        repo = os.environ['GITHUB_REPOSITORY']
+        pr_number = os.environ['PR_NUMBER']
+        token = os.environ['GITHUB_TOKEN']
         
-        pr_author = pr_data['user']['login']
-        print(f"👤 PR 작성자: {pr_author}")
-        return pr_author
-    except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError) as e:
-        print(f"❌ PR 정보 조회 실패: {e}", file=sys.stderr)
-        return None
-
-def get_pr_changed_files(pr_number, repo):
-    """PR에서 변경된 파일 목록을 가져옵니다."""
-    print(f"🔍 PR #{pr_number}의 변경된 파일 목록 조회 중...")
-    try:
-        command = ['gh', 'api', f'/repos/{repo}/pulls/{pr_number}/files']
-        result = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8')
-        files = json.loads(result.stdout)
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/files"
+        headers = {
+            'Authorization': f'token {token}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
         
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        files_data = response.json()
         changed_files = []
-        for file in files:
-            if file['filename'].endswith('/Main.java'):
+        
+        for file_info in files_data:
+            if file_info['status'] in ['added', 'modified']:
                 changed_files.append({
-                    'filename': file['filename'],
-                    'status': file['status'],  # added, modified, deleted
-                    'changes': file.get('changes', 0),
-                    'additions': file.get('additions', 0),
-                    'deletions': file.get('deletions', 0)
+                    'filename': file_info['filename'],
+                    'status': file_info['status'],
+                    'additions': file_info.get('additions', 0),
+                    'deletions': file_info.get('deletions', 0)
                 })
         
-        print(f"✅ 변경된 Main.java 파일: {len(changed_files)}개")
-        for file in changed_files:
-            print(f"   📄 {file['filename']} ({file['status']})")
-        
+        print(f"📂 GitHub API로 발견된 변경 파일: {len(changed_files)}개")
         return changed_files
-    except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError) as e:
-        print(f"❌ 변경된 파일 조회 실패: {e}", file=sys.stderr)
+        
+    except Exception as e:
+        print(f"❌ GitHub API 호출 실패: {e}")
         return []
 
-def extract_info_from_path(file_path):
-    """파일 경로에서 작성자와 문제 번호를 추출합니다."""
-    match = re.search(r'^([^/]+)/(\d+)/Main\.java$', file_path)
-    if match:
-        author, problem_id = match.groups()
-        return author, problem_id
-    return None, None
-
-def filter_author_files(changed_files, pr_author):
-    """PR 작성자의 파일만 필터링합니다."""
-    print(f"\n🔍 PR 작성자({pr_author})의 파일만 필터링 중...")
+def extract_problem_info_from_path(file_path):
+    """파일 경로에서 문제 정보를 추출합니다."""
+    # 패턴: 사용자명/문제번호/Main.java 또는 사용자명/문제번호_문제이름/Main.java
+    patterns = [
+        r'([^/]+)/(\d+)/Main\.java$',
+        r'([^/]+)/(\d+)_[^/]+/Main\.java$',
+        r'([^/]+)/(\d+)/[^/]+\.java$',
+        r'([^/]+)/(\d+)_[^/]+/[^/]+\.java$'
+    ]
     
-    author_files = []
-    other_files = []
-    
-    for file_info in changed_files:
-        filename = file_info['filename']
-        author, problem_id = extract_info_from_path(filename)
-        
-        if not author or not problem_id:
-            print(f"   ⚠️ {filename}: 잘못된 경로 형식, 무시됨")
-            continue
+    for pattern in patterns:
+        match = re.search(pattern, file_path)
+        if match:
+            author = match.group(1)
+            problem_id = match.group(2)
             
-        if author == pr_author:
-            print(f"   ✅ {filename}: PR 작성자의 파일 (문제 {problem_id})")
-            author_files.append({
-                'author': author,
-                'problem_id': problem_id,
-                'code_file': filename,
-                'language': 'java',
-                'status': file_info['status'],
-                'changes': file_info.get('changes', 0)
-            })
-        else:
-            print(f"   ➖ {filename}: 다른 사용자({author})의 파일, 분석 제외")
-            other_files.append(filename)
+            # 유효한 문제 번호인지 확인 (1-30000 범위)
+            try:
+                problem_num = int(problem_id)
+                if 1 <= problem_num <= 30000:
+                    return {
+                        'author': author,
+                        'problem_id': problem_id,
+                        'file_path': file_path,
+                        'language': 'Java'
+                    }
+            except ValueError:
+                continue
     
-    if other_files:
-        print(f"💡 참고: {len(other_files)}개의 다른 사용자 파일은 분석에서 제외됩니다.")
-    
-    return author_files
+    return None
 
-def select_primary_problem(author_files):
-    """여러 문제 중 기본으로 처리할 문제를 선택합니다."""
-    if not author_files:
-        return None
+def extract_multiple_problems():
+    """PR에서 여러 문제 정보를 추출합니다."""
+    print("🔍 PR에서 여러 문제 정보 추출 시작...")
     
-    # 우선순위: 새로 추가된 파일 > 수정된 파일, 문제 번호가 큰 것 우선
-    added_files = [f for f in author_files if f['status'] == 'added']
-    if added_files:
-        primary = max(added_files, key=lambda x: int(x['problem_id']))
-        print(f"🎯 기본 처리 대상: 새로 추가된 문제 {primary['problem_id']}")
-    else:
-        primary = max(author_files, key=lambda x: int(x['problem_id']))
-        print(f"🎯 기본 처리 대상: 수정된 문제 {primary['problem_id']}")
-    
-    return primary
-
-def create_problems_summary(author_files):
-    """문제 요약 정보를 생성합니다."""
-    if not author_files:
-        return ""
-    
-    if len(author_files) == 1:
-        file = author_files[0]
-        status_text = "새로 추가" if file['status'] == 'added' else "수정"
-        return f"📊 **이번 PR**: 문제 {file['problem_id']} ({status_text})"
-    
-    added_count = len([f for f in author_files if f['status'] == 'added'])
-    modified_count = len([f for f in author_files if f['status'] == 'modified'])
-    
-    summary_lines = [f"📊 **이번 PR 변경사항** (총 {len(author_files)}개)"]
-    
-    if added_count > 0:
-        added_problems = [f['problem_id'] for f in author_files if f['status'] == 'added']
-        summary_lines.append(f"   📁 새로 추가: {added_count}개 (문제 {', '.join(added_problems)})")
-    
-    if modified_count > 0:
-        modified_problems = [f['problem_id'] for f in author_files if f['status'] == 'modified']
-        summary_lines.append(f"   📝 수정: {modified_count}개 (문제 {', '.join(modified_problems)})")
-    
-    return "\\n".join(summary_lines)
-
-def set_github_output(name, value):
-    """GitHub Actions의 출력을 설정합니다."""
-    output_file = os.environ.get('GITHUB_OUTPUT')
-    if output_file:
-        with open(output_file, 'a', encoding='utf-8') as f:
-            f.write(f"{name}={value}\n")
-    print(f"📤 GITHUB_OUTPUT: {name}={value}")
-
-def main():
-    pr_number = os.environ.get('PR_NUMBER')
-    repo = os.environ.get('GITHUB_REPOSITORY')
-
-    if not pr_number or not repo:
-        print("❌ 환경 변수 PR_NUMBER 또는 GITHUB_REPOSITORY가 설정되지 않았습니다.", file=sys.stderr)
-        sys.exit(1)
-
-    # 1. PR 작성자 정보 가져오기
-    pr_author = get_pr_info(pr_number, repo)
-    if not pr_author:
-        print("❌ PR 작성자 정보를 가져올 수 없습니다.", file=sys.stderr)
-        sys.exit(1)
-
-    # 2. PR에서 변경된 Main.java 파일들 가져오기
-    changed_files = get_pr_changed_files(pr_number, repo)
+    # GitHub API로 변경된 파일 목록 가져오기
+    changed_files = get_changed_files_from_api()
     
     if not changed_files:
-        print("❌ PR에서 변경된 Main.java 파일을 찾을 수 없습니다.", file=sys.stderr)
-        # 더미 값 설정
-        set_github_output('author', pr_author)
-        set_github_output('problem_id', '0000')
-        set_github_output('code_file', 'dummy/Main.java')
-        set_github_output('language', 'java')
-        set_github_output('has_valid_problems', 'false')
-        set_github_output('problems_summary', '❌ 변경된 Main.java 파일이 없습니다.')
-        return
+        print("⚠️ 변경된 파일이 없습니다.")
+        return []
+    
+    # 문제 정보 추출
+    problems = []
+    seen_problems = set()  # 중복 방지
+    
+    for file_info in changed_files:
+        file_path = file_info['filename']
+        print(f"📁 분석 중: {file_path}")
+        
+        problem_info = extract_problem_info_from_path(file_path)
+        if problem_info:
+            # 중복 체크 (같은 작성자의 같은 문제)
+            key = f"{problem_info['author']}-{problem_info['problem_id']}"
+            if key not in seen_problems:
+                problems.append(problem_info)
+                seen_problems.add(key)
+                print(f"  ✅ 문제 발견: {problem_info['author']} - {problem_info['problem_id']}")
+            else:
+                print(f"  ⚠️ 중복 문제 건너뜀: {key}")
+        else:
+            print(f"  ❌ 유효하지 않은 파일: {file_path}")
+    
+    return problems
 
-    # 3. PR 작성자의 파일만 필터링
-    author_files = filter_author_files(changed_files, pr_author)
+def select_priority_problem(problems):
+    """여러 문제 중 우선순위가 높은 문제를 선택합니다."""
+    if not problems:
+        return None
     
-    if not author_files:
-        print("❌ PR 작성자의 유효한 문제 파일이 없습니다.", file=sys.stderr)
-        # 더미 값 설정
-        set_github_output('author', pr_author)
-        set_github_output('problem_id', '0000')
-        set_github_output('code_file', 'dummy/Main.java')
-        set_github_output('language', 'java')
-        set_github_output('has_valid_problems', 'false')
-        set_github_output('problems_summary', f'❌ {pr_author}님의 유효한 문제 파일이 없습니다.')
-        return
+    # 우선순위: 문제 번호가 작은 것부터
+    sorted_problems = sorted(problems, key=lambda x: int(x['problem_id']))
+    return sorted_problems[0]
 
-    # 4. 기본 처리할 문제 선택
-    primary_problem = select_primary_problem(author_files)
+def main():
+    """메인 실행 함수"""
+    print("🎯 PR 정보 추출 시작")
     
-    # 5. GitHub Actions 출력 설정
-    set_github_output('author', primary_problem['author'])
-    set_github_output('problem_id', primary_problem['problem_id'])
-    set_github_output('code_file', primary_problem['code_file'])
-    set_github_output('language', primary_problem['language'])
-    set_github_output('has_valid_problems', 'true')
+    # 여러 문제 추출
+    problems = extract_multiple_problems()
     
-    # 6. 파일 상태별 카운트
-    added_count = len([f for f in author_files if f['status'] == 'added'])
-    modified_count = len([f for f in author_files if f['status'] == 'modified'])
+    if not problems:
+        print("❌ 분석할 수 있는 문제가 없습니다.")
+        
+        # GitHub Actions Output 설정
+        set_github_output("has_valid_problems", "false")
+        set_github_output("problem_id", "0000")
+        set_github_output("author", "unknown")
+        set_github_output("code_file", "")
+        set_github_output("language", "Java")
+        set_github_output("total_problems_count", "0")
+        set_github_output("is_multiple_problems", "false")
+        set_github_output("problems_json", "[]")
+        return
     
-    set_github_output('total_problems_count', str(len(author_files)))
-    set_github_output('added_problems_count', str(added_count))
-    set_github_output('modified_problems_count', str(modified_count))
-    set_github_output('is_multiple_problems', 'true' if len(author_files) > 1 else 'false')
+    # 우선순위 문제 선택
+    priority_problem = select_priority_problem(problems)
     
-    # 7. 문제 요약 정보
-    problems_summary = create_problems_summary(author_files)
-    set_github_output('problems_summary', problems_summary)
+    # 문제 목록을 JSON으로 저장
+    with open('problems_list.json', 'w', encoding='utf-8') as f:
+        json.dump(problems, f, ensure_ascii=False, indent=2)
     
-    # 8. 분석 결과를 JSON으로 저장
-    analysis_result = {
-        'pr_author': pr_author,
-        'pr_number': pr_number,
-        'author_files': author_files,
-        'primary_problem': primary_problem,
-        'summary': {
-            'total_count': len(author_files),
-            'added_count': added_count,
-            'modified_count': modified_count
-        }
-    }
+    # GitHub Actions Output 설정
+    set_github_output("has_valid_problems", "true")
+    set_github_output("problem_id", priority_problem['problem_id'])
+    set_github_output("author", priority_problem['author'])
+    set_github_output("code_file", priority_problem['file_path'])
+    set_github_output("language", priority_problem['language'])
+    set_github_output("total_problems_count", str(len(problems)))
+    set_github_output("is_multiple_problems", "true" if len(problems) > 1 else "false")
+    set_github_output("problems_json", json.dumps(problems, ensure_ascii=False))
     
-    with open('pr_analysis.json', 'w', encoding='utf-8') as f:
-        json.dump(analysis_result, f, ensure_ascii=False, indent=2)
+    # 결과 출력
+    print(f"\n📊 추출 결과:")
+    print(f"  총 문제 수: {len(problems)}개")
+    print(f"  우선순위 문제: {priority_problem['problem_id']} ({priority_problem['author']})")
     
-    # 9. 결과 출력
-    print(f"\n🎉 분석 완료!")
-    print(f"👤 PR 작성자: {pr_author}")
-    print(f"📊 분석 대상: {len(author_files)}개 문제")
-    print(f"   📁 새로 추가: {added_count}개")
-    print(f"   📝 수정: {modified_count}개")
-    print(f"🎯 테스트 대상: 문제 {primary_problem['problem_id']} ({primary_problem['status']})")
+    if len(problems) > 1:
+        print(f"  다른 문제들:")
+        for problem in problems:
+            if problem != priority_problem:
+                print(f"    - {problem['problem_id']} ({problem['author']})")
     
-    if len(author_files) > 1:
-        print("💡 여러 문제가 변경되었지만, 가장 우선순위가 높은 문제를 테스트합니다.")
+    print(f"  💾 문제 목록 저장: problems_list.json")
+
+def set_github_output(name, value):
+    """GitHub Actions output 설정"""
+    if 'GITHUB_OUTPUT' in os.environ:
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+            f.write(f"{name}={value}\n")
+    else:
+        print(f"Output: {name}={value}")
 
 if __name__ == "__main__":
     main()
