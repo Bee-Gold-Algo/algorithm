@@ -1,5 +1,5 @@
 # GitHub Actions 워크플로우 이름
-name: BOJ Study Automation
+name: BOJ Study Automation (Gemini API)
 
 # 워크플로우 실행 조건
 on:
@@ -42,93 +42,48 @@ jobs:
           distribution: "temurin"
           java-version: "11"
 
-      # 4. 시스템 의존성 설치 (Playwright용)
-      - name: Install system dependencies for crawling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libnss3 \
-            libatk-bridge2.0-0 \
-            libdrm2 \
-            libxkbcommon0 \
-            libgtk-3-0 \
-            libgbm1 \
-            libasound2t64 \
-            libxrandr2 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxfixes3 \
-            libatspi2.0-0 \
-            libxss1 \
-            libgconf-2-4 \
-            fonts-liberation \
-            libappindicator3-1 \
-            libu2f-udev \
-            xdg-utils \
-            wget \
-            ca-certificates || \
-          # Ubuntu 24.04+ 호환성을 위한 대안 패키지 설치
-          sudo apt-get install -y \
-            libnss3 \
-            libatk-bridge2.0-0 \
-            libdrm2 \
-            libxkbcommon0 \
-            libgtk-3-0 \
-            libgbm1 \
-            libasound2t64 \
-            libxrandr2 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxfixes3 \
-            libatspi2.0-0 \
-            libxss1 \
-            fonts-liberation \
-            libappindicator3-1 \
-            xdg-utils \
-            wget \
-            ca-certificates
-
-      # 5. Python 의존성 설치
+      # 4. Python 의존성 설치 (Gemini API 기반)
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install google-generativeai pytz selenium webdriver-manager beautifulsoup4 requests playwright
+          pip install google-generativeai pytz beautifulsoup4 requests
 
-      # 6. Playwright 브라우저 설치 및 설정
-      - name: Install and setup Playwright
+      # 5. Gemini API 환경 테스트
+      - name: Test Gemini API environment
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          echo "🎭 Playwright 브라우저 설치 중..."
-          python -m playwright install chromium
-          python -m playwright install-deps
-          echo "✅ Playwright 설치 완료"
-
-      # 7. 네트워크 및 환경 테스트
-      - name: Test crawling environment
-        run: |
-          echo "🌐 크롤링 환경 테스트..."
+          echo "🤖 Gemini API 환경 테스트..."
           echo "Python version: $(python --version)"
-          echo "Playwright version: $(python -m playwright --version)"
-          echo "Chromium path: $(python -c "import playwright; print(playwright.__file__)")"
+          
+          # Gemini API 키 확인
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "❌ GEMINI_API_KEY가 설정되지 않았습니다."
+            exit 1
+          else
+            echo "✅ GEMINI_API_KEY 설정 확인됨"
+          fi
+          
+          # Google-generativeai 라이브러리 테스트
+          echo "📦 google-generativeai 라이브러리 테스트..."
+          python -c "
+          import google.generativeai as genai
+          import os
+          try:
+              genai.configure(api_key=os.environ['GEMINI_API_KEY'])
+              model = genai.GenerativeModel('gemini-1.5-flash-002')
+              print('✅ Gemini API 연결 성공')
+          except Exception as e:
+              print(f'❌ Gemini API 연결 실패: {e}')
+              exit(1)
+          " || (echo "❌ Gemini API 테스트 실패" && exit 1)
           
           # 네트워크 연결 테스트
           echo "📡 네트워크 연결 테스트..."
-          curl -I https://www.acmicpc.net/ --max-time 10 || echo "⚠️ 백준 직접 접근 제한됨"
+          curl -I https://generativelanguage.googleapis.com/ --max-time 10 || echo "⚠️ Gemini API 엔드포인트 직접 접근 제한됨"
           curl -I https://solved.ac/ --max-time 10 || echo "⚠️ solved.ac 접근 제한됨"
-          
-          # 간단한 Playwright 테스트
-          echo "🎭 Playwright 기능 테스트..."
-          python -c "
-          from playwright.sync_api import sync_playwright
-          with sync_playwright() as p:
-              browser = p.chromium.launch(headless=True)
-              page = browser.new_page()
-              page.goto('https://httpbin.org/user-agent')
-              print('User-Agent test:', page.text_content('body'))
-              browser.close()
-          " || echo "⚠️ Playwright 테스트 실패"
 
-
-      # 8. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
+      # 6. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
       - name: Extract problem and code info
         id: extract-info
         run: python scripts/extract_pr_info.py # 스크립트 내부에서 API를 호출하도록 변경
@@ -137,7 +92,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 9. 파일 구조 및 유효성 확인
+      # 7. 파일 구조 및 유효성 확인
       - name: Check valid problems
         id: check-validity
         run: |
@@ -149,29 +104,31 @@ jobs:
             echo "⚠️ 분석할 수 있는 유효한 문제가 없습니다."
           else
             echo "skip_tests=false" >> $GITHUB_OUTPUT
-            echo "✅ 유효한 문제를 발견했습니다. 크롤링을 시작합니다."
+            echo "✅ 유효한 문제를 발견했습니다. Gemini API 웹 검색을 시작합니다."
           fi
 
-      # 10. 백준 문제 정보 크롤링 (강화된 재시도 로직)
-      - name: Crawl BOJ problem information
+      # 8. Gemini API로 백준 문제 정보 검색 (강화된 재시도 로직)
+      - name: Search BOJ problem information with Gemini API
         if: steps.check-validity.outputs.skip_tests == 'false'
-        id: crawl-problem
+        id: search-problem
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           PROBLEM_ID="${{ steps.extract-info.outputs.problem_id }}"
-          echo "🎯 문제 $PROBLEM_ID 크롤링 시작..."
+          echo "🤖 Gemini API로 문제 $PROBLEM_ID 정보 검색 시작..."
           
           # 여러 번 재시도
           SUCCESS=false
           for attempt in {1..3}; do
-            echo "🚀 크롤링 시도 $attempt/3..."
+            echo "🚀 Gemini 검색 시도 $attempt/3..."
             
-            if python scripts/fetch_boj_problem.py --problem-id $PROBLEM_ID; then
-              echo "✅ 크롤링 성공!"
-              echo "crawl_success=true" >> $GITHUB_OUTPUT
+            if python scripts/fetch_boj_problem_gemini.py --problem-id $PROBLEM_ID; then
+              echo "✅ Gemini 웹 검색 성공!"
+              echo "search_success=true" >> $GITHUB_OUTPUT
               SUCCESS=true
               break
             else
-              echo "❌ 크롤링 시도 $attempt 실패"
+              echo "❌ Gemini 검색 시도 $attempt 실패"
               if [ $attempt -lt 3 ]; then
                 echo "⏳ 30초 후 재시도..."
                 sleep 30
@@ -180,33 +137,72 @@ jobs:
           done
           
           if [ "$SUCCESS" = "false" ]; then
-            echo "💥 모든 크롤링 시도 실패"
-            echo "crawl_success=false" >> $GITHUB_OUTPUT
+            echo "💥 모든 Gemini 검색 시도 실패"
+            echo "search_success=false" >> $GITHUB_OUTPUT
           fi
         continue-on-error: true
 
-      # 11. 크롤링 실패 시 대안 처리
-      - name: Handle crawling failure
-        if: steps.check-validity.outputs.skip_tests == 'false' && steps.crawl-problem.outputs.crawl_success != 'true'
+      # 9. Gemini 검색 실패 시 대안 처리
+      - name: Handle Gemini search failure
+        if: steps.check-validity.outputs.skip_tests == 'false' && steps.search-problem.outputs.search_success != 'true'
         run: |
           PROBLEM_ID="${{ steps.extract-info.outputs.problem_id }}"
-          echo "🛠️ 크롤링 실패로 인한 대안 처리..."
+          echo "🛠️ Gemini 검색 실패로 인한 대안 처리..."
           
-          # 기본적인 문제 정보 파일 생성
-          cat > problem_info.json << EOF
-          {
-            "problem_id": "$PROBLEM_ID",
-            "title": "문제 $PROBLEM_ID",
-            "level": "N/A",
-            "tags": [],
-            "description": "크롤링 실패로 인해 문제 설명을 가져올 수 없습니다. https://www.acmicpc.net/problem/$PROBLEM_ID 에서 직접 확인해주세요.",
-            "input_format": "입력 형식을 직접 확인해주세요.",
-            "output_format": "출력 형식을 직접 확인해주세요.",
-            "limits": "시간/메모리 제한을 직접 확인해주세요.",
-            "hint": "",
-            "samples": []
-          }
-          EOF
+          # solved.ac API만으로 기본 정보 수집 시도
+          echo "📡 solved.ac API로 기본 정보 수집 시도..."
+          python -c "
+          import requests
+          import json
+          
+          try:
+              url = f'https://solved.ac/api/v3/problem/show?problemId=$PROBLEM_ID'
+              response = requests.get(url, timeout=15)
+              if response.status_code == 200:
+                  data = response.json()
+                  tags = []
+                  for tag_data in data.get('tags', []):
+                      korean_name = next((d['name'] for d in tag_data.get('displayNames', []) if d['language'] == 'ko'), None)
+                      if korean_name:
+                          tags.append(korean_name)
+                  
+                  problem_info = {
+                      'problem_id': '$PROBLEM_ID',
+                      'title': data.get('titleKo', '문제 $PROBLEM_ID'),
+                      'level': data.get('level', 'N/A'),
+                      'tags': tags,
+                      'description': f'Gemini 검색 실패로 인해 문제 설명을 가져올 수 없습니다. https://www.acmicpc.net/problem/$PROBLEM_ID 에서 직접 확인해주세요.',
+                      'input_format': '입력 형식을 직접 확인해주세요.',
+                      'output_format': '출력 형식을 직접 확인해주세요.',
+                      'limits': '시간/메모리 제한을 직접 확인해주세요.',
+                      'hint': '',
+                      'samples': []
+                  }
+                  
+                  with open('problem_info.json', 'w', encoding='utf-8') as f:
+                      json.dump(problem_info, f, ensure_ascii=False, indent=2)
+                  print('✅ solved.ac 기본 정보 수집 완료')
+              else:
+                  raise Exception(f'API 응답 코드: {response.status_code}')
+          except Exception as e:
+              print(f'⚠️ solved.ac API 실패: {e}')
+              # 최소한의 정보라도 제공
+              problem_info = {
+                  'problem_id': '$PROBLEM_ID',
+                  'title': '문제 $PROBLEM_ID',
+                  'level': 'N/A',
+                  'tags': [],
+                  'description': 'API 검색 실패로 인해 문제 설명을 가져올 수 없습니다. https://www.acmicpc.net/problem/$PROBLEM_ID 에서 직접 확인해주세요.',
+                  'input_format': '입력 형식을 직접 확인해주세요.',
+                  'output_format': '출력 형식을 직접 확인해주세요.',
+                  'limits': '시간/메모리 제한을 직접 확인해주세요.',
+                  'hint': '',
+                  'samples': []
+              }
+              with open('problem_info.json', 'w', encoding='utf-8') as f:
+                  json.dump(problem_info, f, ensure_ascii=False, indent=2)
+              print('⚠️ 최소한의 정보 파일 생성')
+          "
           
           # 빈 샘플 테스트 파일 생성
           cat > sample_tests.json << EOF
@@ -218,11 +214,11 @@ jobs:
           
           echo "⚠️ 대안 정보 파일 생성 완료"
 
-      # 12. 크롤링 결과 확인 및 검증
-      - name: Verify crawled data
+      # 10. 검색 결과 확인 및 검증
+      - name: Verify search results
         if: steps.check-validity.outputs.skip_tests == 'false'
         run: |
-          echo "📊 크롤링 결과 검증..."
+          echo "📊 Gemini 검색 결과 검증..."
           
           if [ -f problem_info.json ]; then
             echo "✅ problem_info.json 파일 존재"
@@ -240,7 +236,7 @@ jobs:
             echo "❌ sample_tests.json 파일 없음"
           fi
 
-      # 13. Gemini API로 반례 테스트케이스 생성
+      # 11. Gemini API로 반례 테스트케이스 생성
       - name: Generate test cases with Gemini
         if: steps.check-validity.outputs.skip_tests == 'false'
         env:
@@ -253,7 +249,7 @@ jobs:
             --language ${{ steps.extract-info.outputs.language }} \
             --problem-info problem_info.json
 
-      # 14. 모든 테스트 실행
+      # 12. 모든 테스트 실행
       - name: Run all tests
         if: steps.check-validity.outputs.skip_tests == 'false'
         id: run-tests
@@ -265,7 +261,7 @@ jobs:
             --sample-tests sample_tests.json \
             --generated-tests generated_tests.json
 
-      # 15. 테스트 통과 시 README.md 업데이트
+      # 13. 테스트 통과 시 README.md 업데이트
       - name: Update README on success
         if: steps.run-tests.outputs.result == 'PASS'
         run: |
@@ -276,7 +272,7 @@ jobs:
             --submission-date $(date '+%Y-%m-%d') \
             --language ${{ steps.extract-info.outputs.language }}
 
-      # 16. README.md 변경사항을 PR 브랜치에 커밋 및 푸시
+      # 14. README.md 변경사항을 PR 브랜치에 커밋 및 푸시
       - name: Commit and Push README changes
         if: steps.run-tests.outputs.result == 'PASS'
         run: |
@@ -290,8 +286,8 @@ jobs:
             echo "README.md에 변경사항이 없어 커밋하지 않습니다."
           fi
 
-      # 17. 크롤링 성공 시 Mattermost 알림
-      - name: Send success notification with crawling info
+      # 15. Gemini 검색 성공 시 Mattermost 알림
+      - name: Send success notification with Gemini search info
         if: steps.run-tests.outputs.result == 'PASS'
         run: |
           PROBLEM_ID="${{ steps.extract-info.outputs.problem_id }}"
@@ -299,20 +295,20 @@ jobs:
           LANGUAGE="${{ steps.extract-info.outputs.language }}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
-          CRAWL_SUCCESS="${{ steps.crawl-problem.outputs.crawl_success }}"
+          SEARCH_SUCCESS="${{ steps.search-problem.outputs.search_success }}"
           
-          # 크롤링 상태에 따른 메시지 조정
-          if [ "$CRAWL_SUCCESS" = "true" ]; then
-            CRAWL_STATUS="🕷️ 크롤링 성공"
+          # 검색 상태에 따른 메시지 조정
+          if [ "$SEARCH_SUCCESS" = "true" ]; then
+            SEARCH_STATUS="🤖 Gemini 웹 검색 성공"
           else
-            CRAWL_STATUS="⚠️ 크롤링 실패 (대안 정보 사용)"
+            SEARCH_STATUS="⚠️ Gemini 검색 실패 (대안 정보 사용)"
           fi
 
           cat > payload.json << EOF
           {
             "username": "BOJ-Bot",
             "icon_emoji": ":white_check_mark:",
-            "text": "🎉 **Test Passed!**\\n\\n**Problem**: ${PROBLEM_ID}\\n**Solver**: ${AUTHOR}\\n**Language**: ${LANGUAGE}\\n**Status**: ${CRAWL_STATUS}\\n**PR**: ${PR_URL}\\n\\n✅ 모든 테스트를 통과했습니다!"
+            "text": "🎉 **Test Passed!**\\n\\n**Problem**: ${PROBLEM_ID}\\n**Solver**: ${AUTHOR}\\n**Language**: ${LANGUAGE}\\n**Status**: ${SEARCH_STATUS}\\n**PR**: ${PR_URL}\\n\\n✅ 모든 테스트를 통과했습니다!"
           }
           EOF
 
@@ -322,7 +318,7 @@ jobs:
             "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
             --fail --silent --show-error
 
-      # 18. 테스트 실패 시 상세 알림
+      # 16. 테스트 실패 시 상세 알림
       - name: Send failure notification with details
         if: steps.run-tests.outputs.result == 'FAIL'
         run: |
@@ -331,22 +327,22 @@ jobs:
           LANGUAGE="${{ steps.extract-info.outputs.language }}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
-          CRAWL_SUCCESS="${{ steps.crawl-problem.outputs.crawl_success }}"
+          SEARCH_SUCCESS="${{ steps.search-problem.outputs.search_success }}"
 
           ERROR_DETAILS="${{ steps.run-tests.outputs.details }}"
           ERROR_DETAILS=$(echo "$ERROR_DETAILS" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed 's/`/\\`/g')
 
-          # 크롤링 상태 추가
-          if [ "$CRAWL_SUCCESS" = "true" ]; then
-            CRAWL_INFO="🕷️ 크롤링: 성공"
+          # 검색 상태 추가
+          if [ "$SEARCH_SUCCESS" = "true" ]; then
+            SEARCH_INFO="🤖 Gemini 검색: 성공"
           else
-            CRAWL_INFO="⚠️ 크롤링: 실패 (기본 정보로 테스트)"
+            SEARCH_INFO="⚠️ Gemini 검색: 실패 (기본 정보로 테스트)"
           fi
           cat > payload.json << EOF
           {
             "username": "BOJ-Bot",
             "icon_emoji": ":x:",
-            "text": "❌ **Test Failed!**\\n\\n**Problem**: ${PROBLEM_ID}\\n**Submitter**: ${AUTHOR}\\n**Language**: ${LANGUAGE}\\n**${CRAWL_INFO}**\\n**PR**: ${PR_URL}\\n\\n**Error Details:**\\n\`\`\`\\n${ERROR_DETAILS}\\n\`\`\`\\n\\n💪 코드를 수정한 후 다시 푸시해주세요!"
+            "text": "❌ **Test Failed!**\\n\\n**Problem**: ${PROBLEM_ID}\\n**Submitter**: ${AUTHOR}\\n**Language**: ${LANGUAGE}\\n**${SEARCH_INFO}**\\n**PR**: ${PR_URL}\\n\\n**Error Details:**\\n\`\`\`\\n${ERROR_DETAILS}\\n\`\`\`\\n\\n💪 코드를 수정한 후 다시 푸시해주세요!"
           }
           EOF
 
@@ -356,8 +352,8 @@ jobs:
             "${{ secrets.MATTERMOST_WEBHOOK_URL }}" \
             --fail --silent --show-error
 
-      # 19. PR에 테스트 결과 댓글 작성 (크롤링 정보 포함)
-      - name: Comment test results with crawling status
+      # 17. PR에 테스트 결과 댓글 작성 (Gemini 검색 정보 포함)
+      - name: Comment test results with Gemini search status
         if: always()
         uses: actions/github-script@v6
         with:
@@ -373,7 +369,7 @@ jobs:
               is_multiple_problems
             } = ${{ toJSON(steps.extract-info.outputs) }};
             
-            const crawlSuccess = "${{ steps.crawl-problem.outputs.crawl_success }}";
+            const searchSuccess = "${{ steps.search-problem.outputs.search_success }}";
 
             // 유효한 문제가 없는 경우  
             if (has_valid_problems === 'false' || problem_id === '0000') {
@@ -399,16 +395,16 @@ jobs:
               return;
             }
 
-            // 크롤링 상태 메시지 생성
-            let crawlStatusEmoji = "";
-            let crawlStatusText = "";
+            // Gemini 검색 상태 메시지 생성
+            let searchStatusEmoji = "";
+            let searchStatusText = "";
             
-            if (crawlSuccess === 'true') {
-              crawlStatusEmoji = "🕷️";
-              crawlStatusText = "백준 사이트 크롤링 성공";
+            if (searchSuccess === 'true') {
+              searchStatusEmoji = "🤖";
+              searchStatusText = "Gemini API 웹 검색 성공";
             } else {
-              crawlStatusEmoji = "⚠️";
-              crawlStatusText = "백준 사이트 크롤링 실패 (기본 정보로 테스트 진행)";
+              searchStatusEmoji = "⚠️";
+              searchStatusText = "Gemini 검색 실패 (기본 정보로 테스트 진행)";
             }
 
             // 정상적인 테스트 결과 처리
@@ -434,7 +430,7 @@ jobs:
             **테스트 결과:**
             - ✅ 샘플 테스트: 통과
             - 🤖 AI 생성 반례 테스트: 통과  
-            - ${crawlStatusEmoji} 크롤링 상태: ${crawlStatusText}
+            - ${searchStatusEmoji} 검색 상태: ${searchStatusText}
             - 📊 README.md가 자동으로 업데이트되었습니다.
 
             ${is_multiple_problems === 'true' ? 
@@ -449,15 +445,15 @@ jobs:
             **${author}**님의 문제 **${problem_id}** 코드에서 문제가 발견되었습니다:
 
             **테스트 상태:**
-            - ${crawlStatusEmoji} 크롤링 상태: ${crawlStatusText}
+            - ${searchStatusEmoji} 검색 상태: ${searchStatusText}
             
             **오류 내용:**
             \`\`\`
             ${details}
             \`\`\`
 
-            ${crawlSuccess !== 'true' ? 
-              `⚠️ **크롤링 실패 안내**: 백준 사이트에서 문제 정보를 가져오지 못했습니다. 샘플 테스트케이스가 부족할 수 있으니 직접 확인 후 제출해주세요.` : 
+            ${searchSuccess !== 'true' ? 
+              `⚠️ **Gemini 검색 실패 안내**: AI 웹 검색으로 문제 정보를 가져오지 못했습니다. 샘플 테스트케이스가 부족할 수 있으니 직접 확인 후 제출해주세요.` : 
               ''}
 
             ${is_multiple_problems === 'true' ? 
@@ -474,20 +470,19 @@ jobs:
               body: body
             });
 
-      # 20. 크롤링 디버그 정보 업로드
-      - name: Upload crawling debug artifacts
+      # 18. Gemini 검색 결과 업로드 (디버그용)
+      - name: Upload Gemini search results
         if: always() && steps.check-validity.outputs.skip_tests == 'false'
         uses: actions/upload-artifact@v4
         with:
-          name: crawling-debug-${{ steps.extract-info.outputs.problem_id }}
+          name: gemini-search-results-${{ steps.extract-info.outputs.problem_id }}
           path: |
-            *_screenshot.png
-            *_page.html
             problem_info.json
             sample_tests.json
+            generated_tests.json
           retention-days: 7
 
-      # 21. 다중 문제 알림 (Mattermost)
+      # 19. 다중 문제 알림 (Mattermost)
       - name: Send multiple problems notification
         if: steps.extract-info.outputs.multiple_problems == 'true'
         run: |
