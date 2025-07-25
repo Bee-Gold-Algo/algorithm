@@ -38,7 +38,7 @@ try:
     message_parts = []
     
     # 헤더
-    message_parts.append('🎉 **Test Results**')
+    message_parts.append('🎉 **Test Result**')
     message_parts.append('')  # 빈 줄
     
     # 통계 정보 (더 간결하게)
