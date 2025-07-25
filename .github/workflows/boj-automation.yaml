@@ -53,14 +53,40 @@ jobs:
             libxkbcommon0 \
             libgtk-3-0 \
             libgbm1 \
-            libasound2 \
+            libasound2t64 \
             libxrandr2 \
             libxcomposite1 \
             libxdamage1 \
             libxfixes3 \
             libatspi2.0-0 \
             libxss1 \
-            libgconf-2-4
+            libgconf-2-4 \
+            fonts-liberation \
+            libappindicator3-1 \
+            libu2f-udev \
+            xdg-utils \
+            wget \
+            ca-certificates || \
+          # Ubuntu 24.04+ 호환성을 위한 대안 패키지 설치
+          sudo apt-get install -y \
+            libnss3 \
+            libatk-bridge2.0-0 \
+            libdrm2 \
+            libxkbcommon0 \
+            libgtk-3-0 \
+            libgbm1 \
+            libasound2t64 \
+            libxrandr2 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libatspi2.0-0 \
+            libxss1 \
+            fonts-liberation \
+            libappindicator3-1 \
+            xdg-utils \
+            wget \
+            ca-certificates
 
       # 5. Python 의존성 설치
       - name: Install Python dependencies
