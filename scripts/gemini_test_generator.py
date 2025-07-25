@@ -222,6 +222,8 @@ def main():
     parser.add_argument('--code-file', required=True, help='코드 파일 경로')
     parser.add_argument('--language', required=True, help='프로그래밍 언어')
     parser.add_argument('--problem-info', required=True, help='문제 정보 JSON 파일 경로')
+    # --output 인자를 받도록 추가합니다. (필수)
+    parser.add_argument('--output', required=True, help='생성된 테스트케이스를 저장할 JSON 파일 경로')
     args = parser.parse_args()
 
     print(f"\n🎯 문제 {args.problem_id}의 반례 테스트케이스 생성 시작")
@@ -232,6 +234,7 @@ def main():
         print("   export GEMINI_API_KEY='your_api_key_here'")
         sys.exit(1)
     
+    # ... (문제 및 코드 파일 로드 로직은 동일) ...
     # 문제 정보 로드
     try:
         with open(args.problem_info, 'r', encoding='utf-8') as f:
@@ -251,20 +254,15 @@ def main():
         sys.exit(1)
     
     try:
-        # Gemini 클라이언트 설정
+        # ... (Gemini 클라이언트 설정 및 테스트 생성 로직은 동일) ...
         client, types = setup_gemini_client()
-        
-        # 테스트케이스 생성
         response_text = generate_test_cases(client, types, problem_info, code_content, args.language)
         
         if not response_text:
             print("❌ 테스트케이스 생성 실패")
             sys.exit(1)
         
-        # 테스트케이스 파싱
         test_cases = parse_test_cases(response_text)
-        
-        # 테스트케이스 품질 검증
         validated_cases = validate_test_cases(test_cases, problem_info)
         
         if not validated_cases:
@@ -280,23 +278,24 @@ def main():
             "total_generated": len(validated_cases)
         }
         
-        with open('generated_tests.json', 'w', encoding='utf-8') as f:
+        # 인자로 받은 --output 경로에 파일 저장
+        with open(args.output, 'w', encoding='utf-8') as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         
         print("\n" + "="*50)
         print("🎉 테스트케이스 생성 완료!")
-        print(f"  📊 생성된 테스트케이스: {len(validated_cases)}개")
-        print(f"  💾 저장된 파일: generated_tests.json")
-        print(f"  🤖 생성 모델: Gemini 2.5-flash")
+        print(f" 📊 생성된 테스트케이스: {len(validated_cases)}개")
+        print(f" 💾 저장된 파일: {args.output}") # 저장 경로 출력
+        print(f" 🤖 생성 모델: Gemini 2.5-flash")
         
-        # 생성된 테스트케이스 요약 출력
+        # ... (요약 출력 부분은 동일) ...
         if validated_cases:
             print(f"\n📋 생성된 테스트케이스 요약:")
-            for i, test in enumerate(validated_cases[:3], 1):  # 처음 3개만 출력
+            for i, test in enumerate(validated_cases[:3], 1): # 처음 3개만 출력
                 description = test.get('description', '설명 없음')
-                print(f"  {i}. {description}")
+                print(f"  {i}. {description}")
             if len(validated_cases) > 3:
-                print(f"  ... (총 {len(validated_cases)}개)")
+                print(f"  ... (총 {len(validated_cases)}개)")
         
         print("="*50)
         

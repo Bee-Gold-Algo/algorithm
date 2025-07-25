@@ -281,10 +281,15 @@ def main():
     """메인 실행 함수"""
     parser = argparse.ArgumentParser(description='Gemini 2.5-flash Google Search를 활용한 백준 문제 정보 수집')
     parser.add_argument('--problem-id', required=True, help='수집할 백준 문제의 번호')
+    # --output 인자를 받도록 추가합니다. (필수)
+    parser.add_argument('--output', required=True, help='문제 정보를 저장할 JSON 파일 경로')
     args = parser.parse_args()
 
     problem_id = args.problem_id
-    
+    problem_info_output_path = args.output
+    # 샘플 테스트 파일 경로는 문제 ID를 기반으로 동적으로 생성합니다.
+    sample_tests_output_path = f"sample_{problem_id}_tests.json"
+
     # GEMINI_API_KEY 환경변수 확인
     if not os.getenv('GEMINI_API_KEY'):
         print("❌ GEMINI_API_KEY 환경변수를 설정해주세요.")
@@ -309,25 +314,26 @@ def main():
     }
 
     try:
-        # 문제 정보 저장
-        with open('problem_info.json', 'w', encoding='utf-8') as f:
+        # 문제 정보 저장 (인자로 받은 경로 사용)
+        with open(problem_info_output_path, 'w', encoding='utf-8') as f:
             json.dump(complete_info, f, ensure_ascii=False, indent=2)
         
         # 예제 테스트케이스 저장
         sample_tests = { 
             "problem_id": problem_id, 
-            "test_cases": complete_info.get('samples', []) 
+            "test_cases": complete_info.get('samples', []),
+            "source": "gemini-2.5-flash-search"
         }
-        with open('sample_tests.json', 'w', encoding='utf-8') as f:
+        with open(sample_tests_output_path, 'w', encoding='utf-8') as f:
             json.dump(sample_tests, f, ensure_ascii=False, indent=2)
 
         print("\n" + "="*60)
         print("🎉 Gemini 2.5-flash Google Search 정보 수집 완료!")
-        print(f"  📝 제목: {complete_info['title']} (레벨: {complete_info['level']})")
-        print(f"  🏷️ 태그: {', '.join(complete_info.get('tags', []))}")
-        print(f"  📊 추출된 예제: {len(complete_info.get('samples', []))}개")
-        print(f"  📄 문제 설명 길이: {len(complete_info.get('description', ''))}자")
-        print("  💾 저장된 파일: problem_info.json, sample_tests.json")
+        print(f" 📝 제목: {complete_info['title']} (레벨: {complete_info['level']})")
+        print(f" 🏷️ 태그: {', '.join(complete_info.get('tags', []))}")
+        print(f" 📊 추출된 예제: {len(complete_info.get('samples', []))}개")
+        print(f" 📄 문제 설명 길이: {len(complete_info.get('description', ''))}자")
+        print(f" 💾 저장된 파일: {problem_info_output_path}, {sample_tests_output_path}")
         print("="*60)
 
     except IOError as e:
