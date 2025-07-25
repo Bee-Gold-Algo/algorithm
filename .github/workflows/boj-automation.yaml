@@ -206,10 +206,10 @@ jobs:
       - name: Update README for successful problems
         if: steps.analyze-results.outputs.overall_result == 'PASS'
         run: |
-          echo "📝 성공한 문제들의 README.md 업데이트 중..."
-          
-          # Python으로 성공한 문제들 처리
-          python -c "
+          if [ -f "test_results_summary.json" ]; then
+            echo "📊 테스트 결과 분석 중..."
+            # 'python -c' 다음에 오는 코드 블록의 모든 줄에서 앞쪽 공백을 제거합니다.
+            python -c "
           import json
           import subprocess
           import sys
@@ -224,11 +224,10 @@ jobs:
                   if detail['result'] in ['PASS', 'PARTIAL_PASS']:
                       successful_problems.append(detail)
               
-              print(f'README 업데이트 대상: {len(successful_problems)}개 문제')
+              if successful_problems:
+                print(f'✅ README 업데이트 대상: {len(successful_problems)}개 문제')
               
-              # --- [수정된 부분 시작] ---
               for problem in successful_problems:
-                  # f-string에 사용될 값을 미리 변수에 할당
                   problem_id = problem['problem_id']
                   author = problem['author']
                   
@@ -242,16 +241,17 @@ jobs:
                   
                   try:
                       subprocess.run(cmd, check=True, timeout=30)
-                      # f-string 안에서는 간단한 변수만 사용
-                      print(f'✅ 문제 {problem_id} README 업데이트 완료')
+                      print(f'  - 문제 {problem_id} README 업데이트 완료')
                   except Exception as e:
-                      print(f'⚠️ 문제 {problem_id} README 업데이트 실패: {e}')
-              # --- [수정된 부분 끝] ---
+                      print(f'  - ⚠️ 문제 {problem_id} README 업데이트 실패: {e}')
                       
+          except FileNotFoundError:
+              print('ℹ️ test_results_summary.json 파일이 없어 README 업데이트를 건너뜁니다.')
           except Exception as e:
               print(f'❌ README 업데이트 중 오류: {e}')
               sys.exit(1)
           "
+          fi
 
       # 11. 테스트 완료 확인
       - name: Verify test completion
