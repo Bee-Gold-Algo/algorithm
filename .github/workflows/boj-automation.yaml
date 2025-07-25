@@ -55,7 +55,7 @@ jobs:
         run: |
           echo "🤖 Gemini 2.5-flash API 환경 테스트..."
           echo "Python version: $(python --version)"
-          
+
           # Gemini API 키 확인
           if [ -z "$GEMINI_API_KEY" ]; then
             echo "❌ GEMINI_API_KEY가 설정되지 않았습니다."
@@ -63,11 +63,11 @@ jobs:
           else
             echo "✅ GEMINI_API_KEY 설정 확인됨"
           fi
-          
+
           # 설치된 라이브러리 확인
           echo "📦 설치된 라이브러리 확인..."
           pip list | grep -E "(google|genai)" || echo "⚠️ google 관련 패키지를 찾을 수 없습니다."
-          
+
           # 별도 Python 파일 생성 및 실행
           echo "📦 google-genai 라이브러리 테스트..."
           cat > test_gemini_api.py << 'EOF'
@@ -119,7 +119,7 @@ jobs:
               
           # Python 파일 실행
           python test_gemini_api.py
-          
+
           # 네트워크 연결 테스트
           echo "📡 네트워크 연결 테스트..."
           curl -I https://generativelanguage.googleapis.com/ --max-time 10 || echo "⚠️ Gemini API 엔드포인트 직접 접근 제한됨"
@@ -171,32 +171,7 @@ jobs:
             echo "📊 테스트 결과 분석 중..."
             
             # Python으로 결과 분석
-            cat > analyze_results.py << 'SCRIPT'
-import json
-import os
-
-with open('test_results_summary.json', 'r', encoding='utf-8') as f:
-    results = json.load(f)
-
-overall_success = results.get('overall_success', False)
-total_problems = results.get('total_problems', 0)
-passed_problems = results.get('passed_problems', 0)
-partial_passed = results.get('partial_passed_problems', 0)
-failed_problems = results.get('failed_problems', 0)
-
-# GitHub Actions Output 설정
-with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
-    f.write(f'overall_result={"PASS" if overall_success else "FAIL"}\n')
-    f.write(f'total_problems={total_problems}\n')
-    f.write(f'passed_problems={passed_problems}\n')
-    f.write(f'partial_passed_problems={partial_passed}\n')
-    f.write(f'failed_problems={failed_problems}\n')
-    f.write(f'success_rate={round((passed_problems + partial_passed) / max(total_problems, 1) * 100, 1)}\n')
-
-print(f'전체 결과: {"성공" if overall_success else "실패"}')
-print(f'성공/부분성공: {passed_problems + partial_passed}/{total_problems}')
-SCRIPT
-            python analyze_results.py
+            python scripts/analyze_test_results.py
           else
             echo "❌ 테스트 결과 파일을 찾을 수 없습니다."
             echo "overall_result=FAIL" >> $GITHUB_OUTPUT
@@ -209,49 +184,7 @@ SCRIPT
         run: |
           if [ -f "test_results_summary.json" ]; then
             echo "📊 테스트 결과 분석 중..."
-            cat > update_readme.py << 'SCRIPT'
-import json
-import subprocess
-import sys
-from datetime import datetime
-
-try:
-    with open('test_results_summary.json', 'r', encoding='utf-8') as f:
-        results = json.load(f)
-    
-    successful_problems = []
-    for detail in results.get('details', []):
-        if detail['result'] in ['PASS', 'PARTIAL_PASS']:
-            successful_problems.append(detail)
-    
-    if successful_problems:
-        print(f'✅ README 업데이트 대상: {len(successful_problems)}개 문제')
-    
-    for problem in successful_problems:
-        problem_id = problem['problem_id']
-        author = problem['author']
-        
-        cmd = [
-            'python', 'scripts/update_readme.py',
-            '--problem-id', problem_id,
-            '--author', author,
-            '--submission-date', datetime.now().strftime('%Y-%m-%d'),
-            '--language', 'Java'
-        ]
-        
-        try:
-            subprocess.run(cmd, check=True, timeout=30)
-            print(f'  - 문제 {problem_id} README 업데이트 완료')
-        except Exception as e:
-            print(f'  - ⚠️ 문제 {problem_id} README 업데이트 실패: {e}')
-            
-except FileNotFoundError:
-    print('ℹ️ test_results_summary.json 파일이 없어 README 업데이트를 건너뜁니다.')
-except Exception as e:
-    print(f'❌ README 업데이트 중 오류: {e}')
-    sys.exit(1)
-SCRIPT
-            python update_readme.py
+            python scripts/update_readme_batch.py
           fi
 
       # 11. 테스트 완료 확인
@@ -259,7 +192,7 @@ SCRIPT
         if: steps.check-validity.outputs.skip_tests == 'false'
         run: |
           echo "📊 테스트 완료 확인..."
-          
+
           if [ -f "test_results_summary.json" ]; then
             echo "✅ 테스트 결과 파일 존재"
             echo "📄 결과 요약:"
@@ -291,168 +224,18 @@ SCRIPT
         if: steps.analyze-results.outputs.overall_result == 'PASS'
         run: |
           echo "📢 성공 알림 전송 중..."
-          
-          # Python으로 상세한 알림 메시지 생성
-          cat > success_notification.py << 'SCRIPT'
-import json
-import subprocess
-import os
-import tempfile
 
-try:
-    with open('test_results_summary.json', 'r', encoding='utf-8') as f:
-        results = json.load(f)
-    
-    total = results.get('total_problems', 0)
-    passed = results.get('passed_problems', 0)
-    partial = results.get('partial_passed_problems', 0)
-    failed = results.get('failed_problems', 0)
-    
-    # 성공한 문제들 목록
-    success_list = []
-    partial_list = []
-    failed_list = []
-    
-    for detail in results.get('details', []):
-        problem_id = detail['problem_id']
-        author = detail['author']
-        result = detail['result']
-        
-        if result == 'PASS':
-            success_list.append(f'**{problem_id}** ({author})')
-        elif result == 'PARTIAL_PASS':
-            partial_list.append(f'**{problem_id}** ({author})')
-        else:
-            failed_list.append(f'**{problem_id}** ({author})')
-    
-    # 메시지 구성
-    message_parts = [
-        '🎉 **Multiple Problems Test Results**',
-        f'**Total**: {total}개 | **Success**: {passed}개 | **Partial**: {partial}개 | **Failed**: {failed}개',
-        f'**Success Rate**: {round((passed + partial) / max(total, 1) * 100, 1)}%',
-        f'**PR**: ${{ github.event.pull_request.html_url }}'
-    ]
-    
-    if success_list:
-        message_parts.append(f'**✅ 완전 성공**: {" | ".join(success_list)}')
-    
-    if partial_list:
-        message_parts.append(f'**⚠️ 부분 성공**: {" | ".join(partial_list)}')
-    
-    if failed_list:
-        message_parts.append(f'**❌ 실패**: {" | ".join(failed_list)}')
-    
-    message_parts.append('🎯 한 문제 이상 성공으로 PR 승인됩니다!')
-    
-    message = '\\n\\n'.join(message_parts)
-    
-    # MatterMost 알림 전송
-    payload = {
-        'username': 'BOJ-Bot',
-        'icon_emoji': ':white_check_mark:',
-        'text': message
-    }
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-        json.dump(payload, f)
-        payload_file = f.name
-    
-    subprocess.run([
-        'curl', '-X', 'POST',
-        '-H', 'Content-Type: application/json',
-        '-d', f'@{payload_file}',
-        '${{ secrets.MATTERMOST_WEBHOOK_URL }}',
-        '--fail', '--silent', '--show-error'
-    ], check=True)
-    
-    os.unlink(payload_file)
-    print('✅ 성공 알림 전송 완료')
-    
-except Exception as e:
-    print(f'❌ 알림 전송 실패: {e}')
-SCRIPT
-          python success_notification.py
+          # Python으로 상세한 알림 메시지 생성
+          python scripts/send_success_notification.py "${{ github.event.pull_request.html_url }}"
 
       # 16. 상세한 실패 알림 전송
       - name: Send detailed failure notification
         if: steps.analyze-results.outputs.overall_result == 'FAIL'
         run: |
           echo "📢 실패 알림 전송 중..."
-          
-          # Python으로 상세한 실패 알림 메시지 생성
-          cat > failure_notification.py << 'SCRIPT'
-import json
-import subprocess
-import os
-import tempfile
 
-try:
-    with open('test_results_summary.json', 'r', encoding='utf-8') as f:
-        results = json.load(f)
-    
-    total = results.get('total_problems', 0)
-    passed = results.get('passed_problems', 0)
-    partial = results.get('partial_passed_problems', 0)
-    failed = results.get('failed_problems', 0)
-    error = results.get('error_problems', 0)
-    
-    # 실패 상세 정보
-    failure_details = []
-    for detail in results.get('details', []):
-        if detail['result'] in ['FAIL', 'ERROR']:
-            problem_id = detail['problem_id']
-            author = detail['author']
-            errors = detail.get('errors', [])
-            
-            error_summary = errors[0] if errors else '알 수 없는 오류'
-            if len(error_summary) > 100:
-                error_summary = error_summary[:100] + '...'
-            
-            failure_details.append(f'**{problem_id}** ({author}): {error_summary}')
-    
-    # 메시지 구성
-    message_parts = [
-        '❌ **Multiple Problems Test Failed**',
-        f'**Total**: {total}개 | **Success**: {passed}개 | **Partial**: {partial}개 | **Failed**: {failed}개 | **Error**: {error}개',
-        f'**PR**: ${{ github.event.pull_request.html_url }}'
-    ]
-    
-    if failure_details:
-        message_parts.append('**실패 상세:**')
-        message_parts.extend(failure_details[:5])  # 최대 5개까지만
-        if len(failure_details) > 5:
-            message_parts.append(f'... 외 {len(failure_details) - 5}개 더')
-    
-    message_parts.append('💪 코드를 수정한 후 다시 푸시해주세요!')
-    
-    message = '\\n\\n'.join(message_parts)
-    
-    # MatterMost 알림 전송
-    payload = {
-        'username': 'BOJ-Bot',
-        'icon_emoji': ':x:',
-        'text': message
-    }
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-        json.dump(payload, f)
-        payload_file = f.name
-    
-    subprocess.run([
-        'curl', '-X', 'POST',
-        '-H', 'Content-Type: application/json',
-        '-d', f'@{payload_file}',
-        '${{ secrets.MATTERMOST_WEBHOOK_URL }}',
-        '--fail', '--silent', '--show-error'
-    ], check=True)
-    
-    os.unlink(payload_file)
-    print('✅ 실패 알림 전송 완료')
-    
-except Exception as e:
-    print(f'❌ 알림 전송 실패: {e}')
-SCRIPT
-          python failure_notification.py
+          # Python으로 상세한 실패 알림 메시지 생성
+          python scripts/send_failure_notification.py "${{ github.event.pull_request.html_url }}"
 
       # 17. PR에 상세한 테스트 결과 댓글 작성
       - name: Comment detailed test results
@@ -462,7 +245,7 @@ SCRIPT
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            
+
             // 테스트 결과 로드
             let results = null;
             try {
@@ -473,10 +256,10 @@ SCRIPT
             } catch (error) {
               console.log('결과 파일 로드 실패:', error);
             }
-            
+
             const overall_result = "${{ steps.analyze-results.outputs.overall_result }}";
             const total_problems = parseInt("${{ steps.analyze-results.outputs.total_problems }}") || 0;
-            
+
             if (!results || total_problems === 0) {
               await github.rest.issues.createComment({
                 issue_number: context.issue.number,
@@ -488,15 +271,15 @@ SCRIPT
               });
               return;
             }
-            
+
             // 결과 요약
             const passed = results.passed_problems || 0;
             const partial = results.partial_passed_problems || 0;
             const failed = results.failed_problems || 0;
             const successRate = Math.round((passed + partial) / Math.max(total_problems, 1) * 100 * 10) / 10;
-            
+
             let body = `## 📊 다중 문제 테스트 결과
-            
+
             **전체 결과**: ${overall_result === 'PASS' ? '✅ 성공' : '❌ 실패'} (성공률: ${successRate}%)
 
             | 구분 | 완전 성공 | 부분 성공 | 실패 | 전체 |
@@ -504,7 +287,7 @@ SCRIPT
             | 개수 | ${passed}개 | ${partial}개 | ${failed}개 | ${total_problems}개 |
 
             `;
-            
+
             // 각 문제별 상세 결과
             if (results.details && results.details.length > 0) {
               body += `### 📝 문제별 상세 결과\n\n`;
@@ -538,7 +321,7 @@ SCRIPT
                 body += `\n`;
               }
             }
-            
+
             // 결론
             if (overall_result === 'PASS') {
               body += `### 🎉 테스트 통과!
@@ -554,7 +337,7 @@ SCRIPT
 
             💡 **팁**: 각 문제별 오류 메시지를 확인하여 수정해보세요.`;
             }
-            
+
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
