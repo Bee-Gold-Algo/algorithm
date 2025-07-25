@@ -48,7 +48,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install google-genai pytz beautifulsoup4 requests
 
-      # 5. Gemini API 환경 테스트 (최신 버전)
+        # 5. Gemini API 환경 테스트 (최신 버전)
       - name: Test Gemini API environment
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -68,58 +68,63 @@ jobs:
           echo "📦 설치된 라이브러리 확인..."
           pip list | grep -E "(google|genai)" || echo "⚠️ google 관련 패키지를 찾을 수 없습니다."
           
-          # 최신 google-genai 라이브러리 테스트
+          # 별도 Python 파일 생성 및 실행
           echo "📦 google-genai 라이브러리 테스트..."
-          python -c 
-          "import os
+          cat > test_gemini_api.py << 'EOF'
+          import os
           import sys
 
-          print('🔍 Gemini 2.5-flash API 연결 테스트...')
+          print("🔍 Gemini 2.5-flash API 연결 테스트...")
 
           try:
               from google import genai
               from google.genai import types
-              print('✅ google-genai 라이브러리 import 성공')
+              print("✅ google-genai 라이브러리 import 성공")
               
               # 클라이언트 설정 테스트
-              client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
-              print('✅ Gemini 2.5-flash API 클라이언트 생성 성공')
+              client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+              print("✅ Gemini 2.5-flash API 클라이언트 생성 성공")
               
               # 간단한 테스트 요청
-              print('🧪 간단한 API 테스트 수행...')
+              print("🧪 간단한 API 테스트 수행...")
               config = types.GenerateContentConfig(
                   temperature=0.1,
                   max_output_tokens=100
               )
               
               response = client.models.generate_content(
-                  model='gemini-2.5-flash',
-                  contents='Hello, can you respond with just \"API_TEST_SUCCESS\"?',
+                  model="gemini-2.5-flash",
+                  contents="Hello, can you respond with just 'API_TEST_SUCCESS'?",
                   config=config
               )
               
-              if hasattr(response, 'text') and 'API_TEST_SUCCESS' in response.text:
-                  print('✅ Gemini 2.5-flash API 테스트 완료')
+              if hasattr(response, "text") and "API_TEST_SUCCESS" in response.text:
+                  print("✅ Gemini 2.5-flash API 테스트 완료")
                   sys.exit(0)
               else:
-                  print(f'⚠️ API 응답 확인: {response.text if hasattr(response, \"text\") else \"No text\"}')
-                  print('✅ API 연결은 성공했으나 응답 형식이 예상과 다름')
+                  text = response.text if hasattr(response, "text") else "No text"
+                  print(f"⚠️ API 응답 확인: {text}")
+                  print("✅ API 연결은 성공했으나 응답 형식이 예상과 다름")
                   sys.exit(0)
                   
           except ImportError as e:
-              print(f'❌ google-genai 라이브러리 import 실패: {e}')
-              print('다음 명령어로 설치하세요: pip install google-genai')
+              print(f"❌ google-genai 라이브러리 import 실패: {e}")
+              print("다음 명령어로 설치하세요: pip install google-genai")
               sys.exit(1)
           except Exception as e:
-              print(f'❌ Gemini 2.5-flash API 연결 실패: {e}')
-              print('API 키 또는 네트워크 연결을 확인하세요.')
+              print(f"❌ Gemini 2.5-flash API 연결 실패: {e}")
+              print("API 키 또는 네트워크 연결을 확인하세요.")
               sys.exit(1)
-          " || (echo "❌ Gemini API 테스트 실패" && exit 1)
+          EOF
+              
+              # Python 파일 실행
+              python test_gemini_api.py
               
               # 네트워크 연결 테스트
               echo "📡 네트워크 연결 테스트..."
               curl -I https://generativelanguage.googleapis.com/ --max-time 10 || echo "⚠️ Gemini API 엔드포인트 직접 접근 제한됨"
               curl -I https://solved.ac/ --max-time 10 || echo "⚠️ solved.ac 접근 제한됨"
+
 
       
       # 6. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
