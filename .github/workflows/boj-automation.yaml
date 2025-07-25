@@ -451,7 +451,7 @@ jobs:
       # 20. 크롤링 디버그 정보 업로드
       - name: Upload crawling debug artifacts
         if: always() && steps.check-validity.outputs.skip_tests == 'false'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: crawling-debug-${{ steps.extract-info.outputs.problem_id }}
           path: |
