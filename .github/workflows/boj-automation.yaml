@@ -227,8 +227,15 @@ jobs:
         run: |
           echo "📢 성공 알림 전송 중..."
 
-          # Python으로 상세한 알림 메시지 생성
-          python scripts/send_success_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}"
+        # 환경변수 확인 (디버깅용)
+        echo "사용자: ${{ github.event.pull_request.user.login }}"
+        if [ -n "$PERSONAL_WEBHOOK_URL" ]; then
+          echo "✅ 개인 웹훅 URL 발견"
+        else
+          echo "⚠️ 개인 웹훅 URL 없음, 기본 채널 사용"
+        fi
+
+        python scripts/send_success_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}"
 
       # 16. 상세한 실패 알림 전송
       - name: Send detailed failure notification
