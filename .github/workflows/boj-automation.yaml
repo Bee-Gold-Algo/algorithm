@@ -125,10 +125,12 @@ jobs:
           curl -I https://generativelanguage.googleapis.com/ --max-time 10 || echo "⚠️ Gemini API 엔드포인트 직접 접근 제한됨"
           curl -I https://solved.ac/ --max-time 10 || echo "⚠️ solved.ac 접근 제한됨"
 
-      # 6. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
-      - name: Extract problem and code info
+      # 6. PR에서 변경된 파일들 및 문제 정보 추출
+      - name: Extract changed files and problem info
         id: extract-info
-        run: python scripts/extract_pr_info.py # 스크립트 내부에서 API를 호출하도록 변경
+        run: |
+          echo "🔍 PR에서 변경된 파일들 분석 중..."
+          python scripts/extract_pr_info.py
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -157,7 +159,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           echo "🚀 다중 문제 테스트 시작..."
-          python scripts/test_runner.py
+          python scripts/multi_test_runner.py
         continue-on-error: true
 
       # 9. 테스트 결과 분석
@@ -244,112 +246,19 @@ jobs:
               sys.exit(1)
           "
 
-      # 11. Gemini 검색 실패 시 대안 처리
-      - name: Handle Gemini search failure
-        if: steps.check-validity.outputs.skip_tests == 'false' && steps.search-problem.outputs.search_success != 'true'
-        run: |
-          PROBLEM_ID="${{ steps.extract-info.outputs.problem_id }}"
-          echo "🛠️ Gemini 검색 실패로 인한 대안 처리..."
-          
-          # solved.ac API만으로 기본 정보 수집 시도
-          echo "📡 solved.ac API로 기본 정보 수집 시도..."
-          python -c "
-          import requests
-          import json
-          
-          try:
-              url = f'https://solved.ac/api/v3/problem/show?problemId=$PROBLEM_ID'
-              response = requests.get(url, timeout=15)
-              if response.status_code == 200:
-                  data = response.json()
-                  tags = []
-                  for tag_data in data.get('tags', []):
-                      korean_name = next((d['name'] for d in tag_data.get('displayNames', []) if d['language'] == 'ko'), None)
-                      if korean_name:
-                          tags.append(korean_name)
-                  
-                  problem_info = {
-                      'problem_id': '$PROBLEM_ID',
-                      'title': data.get('titleKo', '문제 $PROBLEM_ID'),
-                      'level': data.get('level', 'N/A'),
-                      'tags': tags,
-                      'description': f'Gemini 검색 실패로 인해 문제 설명을 가져올 수 없습니다. https://www.acmicpc.net/problem/$PROBLEM_ID 에서 직접 확인해주세요.',
-                      'input_format': '입력 형식을 직접 확인해주세요.',
-                      'output_format': '출력 형식을 직접 확인해주세요.',
-                      'limits': '시간/메모리 제한을 직접 확인해주세요.',
-                      'hint': '',
-                      'samples': []
-                  }
-                  
-                  with open('problem_info.json', 'w', encoding='utf-8') as f:
-                      json.dump(problem_info, f, ensure_ascii=False, indent=2)
-                  print('✅ solved.ac 기본 정보 수집 완료')
-              else:
-                  raise Exception(f'API 응답 코드: {response.status_code}')
-          except Exception as e:
-              print(f'⚠️ solved.ac API 실패: {e}')
-              # 최소한의 정보라도 제공
-              problem_info = {
-                  'problem_id': '$PROBLEM_ID',
-                  'title': '문제 $PROBLEM_ID',
-                  'level': 'N/A',
-                  'tags': [],
-                  'description': 'API 검색 실패로 인해 문제 설명을 가져올 수 없습니다. https://www.acmicpc.net/problem/$PROBLEM_ID 에서 직접 확인해주세요.',
-                  'input_format': '입력 형식을 직접 확인해주세요.',
-                  'output_format': '출력 형식을 직접 확인해주세요.',
-                  'limits': '시간/메모리 제한을 직접 확인해주세요.',
-                  'hint': '',
-                  'samples': []
-              }
-              with open('problem_info.json', 'w', encoding='utf-8') as f:
-                  json.dump(problem_info, f, ensure_ascii=False, indent=2)
-              print('⚠️ 최소한의 정보 파일 생성')
-          "
-          
-          # 빈 샘플 테스트 파일 생성
-          cat > sample_tests.json << EOF
-          {
-            "problem_id": "$PROBLEM_ID",
-            "test_cases": []
-          }
-          EOF
-          
-          echo "⚠️ 대안 정보 파일 생성 완료"
-
-      # 12. 검색 결과 확인 및 검증
-      - name: Verify search results
+      # 11. 테스트 완료 확인
+      - name: Verify test completion
         if: steps.check-validity.outputs.skip_tests == 'false'
         run: |
-          echo "📊 Gemini 검색 결과 검증..."
+          echo "📊 테스트 완료 확인..."
           
-          if [ -f problem_info.json ]; then
-            echo "✅ problem_info.json 파일 존재"
-            echo "📄 problem_info.json 내용:"
-            cat problem_info.json | python -m json.tool | head -20
+          if [ -f "test_results_summary.json" ]; then
+            echo "✅ 테스트 결과 파일 존재"
+            echo "📄 결과 요약:"
+            cat test_results_summary.json | python -m json.tool | head -20
           else
-            echo "❌ problem_info.json 파일 없음"
+            echo "❌ 테스트 결과 파일 없음"
           fi
-          
-          if [ -f sample_tests.json ]; then
-            echo "✅ sample_tests.json 파일 존재"
-            echo "📄 sample_tests.json 내용:"
-            cat sample_tests.json | python -m json.tool
-          else
-            echo "❌ sample_tests.json 파일 없음"
-          fi
-
-      # 13. Gemini 2.5-flash API로 반례 테스트케이스 생성
-      - name: Generate test cases with Gemini 2.5-flash
-        if: steps.check-validity.outputs.skip_tests == 'false'
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          echo "🤖 Gemini 2.5-flash로 테스트케이스 생성 중..."
-          python scripts/gemini_test_generator.py \
-            --problem-id ${{ steps.extract-info.outputs.problem_id }} \
-            --code-file ${{ steps.extract-info.outputs.code_file }} \
-            --language ${{ steps.extract-info.outputs.language }} \
-            --problem-info problem_info.json
 
       # 14. README.md 변경사항을 PR 브랜치에 커밋 및 푸시
       - name: Commit and Push README changes
@@ -645,16 +554,18 @@ jobs:
               body: body
             });
 
-      # 18. Gemini 2.5-flash 검색 결과 업로드 (디버그용)
-      - name: Upload Gemini 2.5-flash search results
+      # 18. 테스트 결과 업로드 (디버그용)
+      - name: Upload test results
         if: always() && steps.check-validity.outputs.skip_tests == 'false'
         uses: actions/upload-artifact@v4
         with:
-          name: gemini-2.5-flash-results-${{ steps.extract-info.outputs.problem_id }}
+          name: test-results-${{ github.event.pull_request.number }}
           path: |
-            problem_info.json
-            sample_tests.json
-            generated_tests.json
+            test_results_summary.json
+            problems_info.json
+            problem_*_info.json
+            tests_*.json
+            sample_*_tests.json
           retention-days: 7
 
   # 데드라인 알림 작업

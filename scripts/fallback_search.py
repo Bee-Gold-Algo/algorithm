@@ -1,17 +1,57 @@
 #!/usr/bin/env python3
 """
 scripts/fallback_search.py
-Gemini 검색 실패 시 대안 검색 (solved.ac API 사용)
+fetch_boj_problem.py를 활용한 대안 검색 스크립트
 """
 
 import argparse
 import json
-import requests
+import subprocess
 import sys
+from pathlib import Path
 
-def search_problem_info(problem_id):
+def search_with_fetch_boj(problem_id):
+    """fetch_boj_problem.py를 사용하여 문제 정보를 검색합니다."""
+    try:
+        print(f"🔍 fetch_boj_problem.py로 문제 {problem_id} 검색 중...")
+        
+        # fetch_boj_problem.py 실행
+        result = subprocess.run([
+            'python', 'scripts/fetch_boj_problem.py',
+            '--problem-id', problem_id
+        ], capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            print(f"✅ fetch_boj_problem.py로 문제 {problem_id} 검색 성공")
+            
+            # fetch_boj_problem.py가 생성한 파일이 있는지 확인
+            expected_files = [
+                f'problem_{problem_id}_info.json',
+                f'sample_{problem_id}_tests.json'
+            ]
+            
+            for file_path in expected_files:
+                if not Path(file_path).exists():
+                    print(f"⚠️ 예상 파일 없음: {file_path}")
+            
+            return True, "fetch_boj_problem.py 검색 성공"
+        else:
+            error_msg = result.stderr or result.stdout or "fetch_boj_problem.py 실행 실패"
+            print(f"⚠️ fetch_boj_problem.py 실패: {error_msg}")
+            return False, error_msg
+            
+    except subprocess.TimeoutExpired:
+        print(f"⚠️ fetch_boj_problem.py 시간 초과")
+        return False, "fetch_boj_problem.py 시간 초과"
+    except Exception as e:
+        print(f"⚠️ fetch_boj_problem.py 실행 중 오류: {e}")
+        return False, str(e)
+
+def search_problem_with_solved_ac(problem_id):
     """solved.ac API를 사용하여 문제 정보를 검색합니다."""
     try:
+        import requests
+        
         # solved.ac API 호출
         url = f'https://solved.ac/api/v3/problem/show?problemId={problem_id}'
         response = requests.get(url, timeout=15)
@@ -36,7 +76,7 @@ def search_problem_info(problem_id):
                 'title': data.get('titleKo', f'문제 {problem_id}'),
                 'level': data.get('level', 'N/A'),
                 'tags': tags,
-                'description': f'Gemini 검색 실패로 인해 상세한 문제 설명을 가져올 수 없습니다.\nhttps://www.acmicpc.net/problem/{problem_id} 에서 직접 확인해주세요.',
+                'description': f'상세한 문제 설명을 가져올 수 없습니다.\nhttps://www.acmicpc.net/problem/{problem_id} 에서 직접 확인해주세요.',
                 'input_format': '입력 형식을 직접 확인해주세요.',
                 'output_format': '출력 형식을 직접 확인해주세요.',
                 'limits': {
@@ -45,7 +85,7 @@ def search_problem_info(problem_id):
                 },
                 'hint': '',
                 'samples': [],
-                'source': 'solved.ac_fallback'
+                'source': 'solved.ac_api'
             }
             
             return problem_info
@@ -62,7 +102,7 @@ def search_problem_info(problem_id):
             'title': f'문제 {problem_id}',
             'level': 'N/A',
             'tags': [],
-            'description': f'API 검색 실패로 인해 문제 설명을 가져올 수 없습니다.\nhttps://www.acmicpc.net/problem/{problem_id} 에서 직접 확인해주세요.',
+            'description': f'문제 정보를 가져올 수 없습니다.\nhttps://www.acmicpc.net/problem/{problem_id} 에서 직접 확인해주세요.',
             'input_format': '입력 형식을 직접 확인해주세요.',
             'output_format': '출력 형식을 직접 확인해주세요.',
             'limits': {
@@ -91,8 +131,16 @@ def main():
     
     print(f"🛠️ 대안 검색 시작: 문제 {args.problem_id}")
     
-    # 문제 정보 검색
-    problem_info = search_problem_info(args.problem_id)
+    # 1. 먼저 fetch_boj_problem.py 시도
+    fetch_success, fetch_error = search_with_fetch_boj(args.problem_id)
+    
+    if fetch_success:
+        print(f"✅ fetch_boj_problem.py로 문제 {args.problem_id} 검색 완료")
+        return
+    
+    # 2. fetch_boj_problem.py 실패 시 solved.ac API 시도
+    print(f"⚠️ fetch_boj_problem.py 실패, solved.ac API 시도...")
+    problem_info = search_problem_with_solved_ac(args.problem_id)
     
     # 문제 정보 저장
     with open(args.output, 'w', encoding='utf-8') as f:
