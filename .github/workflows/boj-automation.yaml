@@ -46,7 +46,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install google-generativeai pytz beautifulsoup4 requests
+          pip install google-genai pytz beautifulsoup4 requests
 
       # 5. Gemini API 환경 테스트
       - name: Test Gemini API environment
@@ -64,23 +64,23 @@ jobs:
             echo "✅ GEMINI_API_KEY 설정 확인됨"
           fi
           
-          # Google-generativeai 라이브러리 테스트
-          echo "📦 google-generativeai 라이브러리 테스트..."
+          # Google-genai 라이브러리 테스트
+          echo "📦 google-genai 라이브러리 테스트..."
           python -c "
-          import google.generativeai as genai
+          from google import genai
+          from google.genai import types
           import os
           try:
-              genai.configure(api_key=os.environ['GEMINI_API_KEY'])
-              model = genai.GenerativeModel('gemini-1.5-flash-002')
-              print('✅ Gemini API 연결 성공')
+              client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+              print('✅ 새로운 Gemini API 클라이언트 연결 성공')
           except Exception as e:
-              print(f'❌ Gemini API 연결 실패: {e}')
+              print(f'❌ 새로운 Gemini API 연결 실패: {e}')
               exit(1)
-          " || (echo "❌ Gemini API 테스트 실패" && exit 1)
+          " || (echo "❌ 새로운 Gemini API 테스트 실패" && exit 1)
           
           # 네트워크 연결 테스트
           echo "📡 네트워크 연결 테스트..."
-          curl -I https://generativelanguage.googleapis.com/ --max-time 10 || echo "⚠️ Gemini API 엔드포인트 직접 접근 제한됨"
+          curl -I https://generativelanguage.googleapis.com/ --max-time 10 || echo "⚠️ 새로운 Gemini API 엔드포인트 직접 접근 제한됨"
           curl -I https://solved.ac/ --max-time 10 || echo "⚠️ solved.ac 접근 제한됨"
 
       # 6. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
@@ -515,6 +515,10 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.9"
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
       - name: Check deadlines and send reminders
         env:
           MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}

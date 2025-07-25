@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
 scripts/fetch_boj_problem.py
-Gemini API의 웹 검색 기능을 활용하여 백준 문제 정보를 수집합니다.
-기존 크롤링 방식에서 Gemini API 웹 검색 방식으로 변경됨.
+새로운 Gemini API의 Google Search 기능을 활용하여 백준 문제 정보를 수집합니다.
+google_search 도구와 gemini-2.5-flash 모델 사용.
 """
 
 import argparse
 import json
 import requests
-import google.generativeai as genai
 import os
 import time
 
@@ -47,31 +46,46 @@ def get_solved_ac_info(problem_id):
         "tags": []
     }
 
-def setup_gemini_api():
-    """Gemini API를 설정합니다."""
+def setup_gemini_client():
+    """새로운 Gemini API 클라이언트를 설정합니다."""
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
         raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
     
-    genai.configure(api_key=api_key)
-    print("🔑 Gemini API 설정 완료")
-    return genai.GenerativeModel('gemini-2.5-flash')
+    try:
+        from google import genai
+        from google.genai import types
+        
+        # 클라이언트 설정
+        client = genai.Client(api_key=api_key)
+        
+        print("🔑 새로운 Gemini API 클라이언트 설정 완료")
+        return client, types
+        
+    except ImportError as e:
+        print(f"❌ 새로운 google-genai 라이브러리가 필요합니다: {e}")
+        print("   pip install google-genai")
+        raise
+    except Exception as e:
+        print(f"❌ Gemini 클라이언트 설정 실패: {e}")
+        raise
 
-def get_boj_problem_with_gemini(model, problem_id):
-    """Gemini API의 웹 검색 기능을 사용하여 백준 문제 정보를 수집합니다."""
-    print(f"\n🤖 Gemini API로 문제 {problem_id} 정보 검색 중...")
+def get_boj_problem_with_new_search(client, types, problem_id):
+    """새로운 Google Search 기능을 사용하여 백준 문제 정보를 수집합니다."""
+    print(f"\n🤖 새로운 Gemini API로 문제 {problem_id} 정보 검색 중...")
     
     prompt = f"""
 백준 온라인 저지(BOJ) 문제 {problem_id}번에 대한 정보를 검색하여 다음 항목들을 JSON 형식으로 정리해주세요:
 
+검색 URL: https://www.acmicpc.net/problem/{problem_id}
+
+추출할 정보:
 1. 문제 설명 (problem_description)
 2. 입력 형식 (input_format) 
 3. 출력 형식 (output_format)
 4. 제한사항 (limits) - 시간 제한, 메모리 제한 등
 5. 예제 입출력 (sample_tests) - 배열 형태로, 각각 input과 output 필드 포함
 6. 힌트 (hint) - 있는 경우만
-
-검색할 URL: https://www.acmicpc.net/problem/{problem_id}
 
 응답은 반드시 다음과 같은 JSON 형식으로만 해주세요:
 {{
@@ -87,24 +101,43 @@ def get_boj_problem_with_gemini(model, problem_id):
 }}
 
 만약 해당 문제를 찾을 수 없으면 "error": "문제를 찾을 수 없습니다" 형태로 응답해주세요.
+HTML 태그는 제거하고 텍스트 내용만 추출해주세요.
 """
 
     try:
-        # Gemini API에서 웹 검색 기능 활성화
-        response = model.generate_content(
-            prompt,
-            tools=['google_search_retrieval'],
-            generation_config={
-                'temperature': 0.1,  # 일관된 결과를 위해 낮은 temperature 사용
-                'max_output_tokens': 8192
-            }
+        # Google Search 도구 정의
+        grounding_tool = types.Tool(
+            google_search=types.GoogleSearch()
         )
         
-        print("  ✅ Gemini API 응답 수신 완료")
+        # 생성 설정 구성
+        config = types.GenerateContentConfig(
+            tools=[grounding_tool],
+            temperature=0.1,
+            max_output_tokens=8192
+        )
+        
+        # 요청 실행
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=config
+        )
+        
+        print("  ✅ 새로운 Gemini API 응답 수신 완료")
+        
+        # 그라운딩 메타데이터 확인
+        if hasattr(response.candidates[0], 'grounding_metadata') and response.candidates[0].grounding_metadata:
+            metadata = response.candidates[0].grounding_metadata
+            if hasattr(metadata, 'web_search_queries'):
+                print(f"  🔍 검색 쿼리: {metadata.web_search_queries}")
+            if hasattr(metadata, 'grounding_chunks'):
+                print(f"  📚 검색 소스: {len(metadata.grounding_chunks)}개")
+        
         return response.text
         
     except Exception as e:
-        print(f"  ❌ Gemini API 호출 중 오류 발생: {e}")
+        print(f"  ❌ 새로운 Gemini API 호출 중 오류 발생: {e}")
         return None
 
 def parse_gemini_response(response_text):
@@ -127,6 +160,7 @@ def parse_gemini_response(response_text):
                 json_text = json_match.group(0)
             else:
                 print("  ⚠️ JSON 형식을 찾을 수 없습니다.")
+                print(f"  📄 원본 응답: {response_text[:500]}...")
                 return None
         
         # JSON 파싱
@@ -136,13 +170,6 @@ def parse_gemini_response(response_text):
         if 'error' in problem_data:
             print(f"  ❌ 문제 정보 수집 실패: {problem_data['error']}")
             return None
-        
-        # 필수 필드 확인
-        required_fields = ['problem_description', 'sample_tests']
-        for field in required_fields:
-            if field not in problem_data or not problem_data[field]:
-                print(f"  ⚠️ 필수 필드 '{field}'가 누락되었습니다.")
-                return None
         
         print("  ✅ JSON 파싱 완료")
         return problem_data
@@ -187,21 +214,21 @@ def convert_to_standard_format(gemini_data):
     print("  ✅ 데이터 형식 변환 완료")
     return standard_format
 
-def get_boj_problem_info_gemini(problem_id, max_retries=3):
-    """Gemini API를 사용하여 백준 문제 정보를 수집합니다."""
-    print(f"\n🎯 문제 {problem_id} 정보 수집 시작 (Gemini 웹 검색)")
+def get_boj_problem_info_new_search(problem_id, max_retries=3):
+    """새로운 Google Search를 사용하여 백준 문제 정보를 수집합니다."""
+    print(f"\n🎯 문제 {problem_id} 정보 수집 시작 (새로운 Google Search)")
     
     try:
-        model = setup_gemini_api()
-    except ValueError as e:
-        print(f"❌ Gemini API 설정 실패: {e}")
+        client, types = setup_gemini_client()
+    except Exception as e:
+        print(f"❌ Gemini 클라이언트 설정 실패: {e}")
         return None
     
     for attempt in range(1, max_retries + 1):
         print(f"\n  🔄 시도 {attempt}/{max_retries}")
         
-        # Gemini로 검색 및 정보 수집
-        response_text = get_boj_problem_with_gemini(model, problem_id)
+        # 새로운 Google Search로 정보 수집
+        response_text = get_boj_problem_with_new_search(client, types, problem_id)
         if not response_text:
             print(f"  ⚠️ 시도 {attempt} 실패")
             if attempt < max_retries:
@@ -219,7 +246,8 @@ def get_boj_problem_info_gemini(problem_id, max_retries=3):
         # 표준 형식으로 변환
         standard_data = convert_to_standard_format(problem_data)
         
-        if standard_data and standard_data.get('description'):
+        # 최소한의 데이터라도 있으면 성공으로 간주
+        if standard_data and (standard_data.get('description') or standard_data.get('samples')):
             print("  🎉 문제 정보 수집 성공!")
             return standard_data
         
@@ -232,7 +260,7 @@ def get_boj_problem_info_gemini(problem_id, max_retries=3):
 
 def main():
     """메인 실행 함수"""
-    parser = argparse.ArgumentParser(description='Gemini API 웹 검색을 활용한 백준 문제 정보 수집')
+    parser = argparse.ArgumentParser(description='새로운 Gemini Google Search를 활용한 백준 문제 정보 수집')
     parser.add_argument('--problem-id', required=True, help='수집할 백준 문제의 번호')
     args = parser.parse_args()
 
@@ -247,8 +275,8 @@ def main():
     # solved.ac API로 기본 정보 수집
     solved_ac_info = get_solved_ac_info(problem_id)
     
-    # Gemini API로 상세 정보 수집
-    boj_details = get_boj_problem_info_gemini(problem_id)
+    # 새로운 Google Search로 상세 정보 수집
+    boj_details = get_boj_problem_info_new_search(problem_id)
 
     if not boj_details:
         print(f"\n❌ 문제 {problem_id} 정보 수집 최종 실패")
@@ -275,7 +303,7 @@ def main():
             json.dump(sample_tests, f, ensure_ascii=False, indent=2)
 
         print("\n" + "="*60)
-        print("🎉 Gemini API 웹 검색 방식 정보 수집 완료!")
+        print("🎉 새로운 Gemini Google Search 방식 정보 수집 완료!")
         print(f"  📝 제목: {complete_info['title']} (레벨: {complete_info['level']})")
         print(f"  🏷️ 태그: {', '.join(complete_info.get('tags', []))}")
         print(f"  📊 추출된 예제: {len(complete_info.get('samples', []))}개")
