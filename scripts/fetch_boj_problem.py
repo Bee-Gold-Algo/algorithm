@@ -55,7 +55,7 @@ def setup_gemini_api():
     
     genai.configure(api_key=api_key)
     print("🔑 Gemini API 설정 완료")
-    return genai.GenerativeModel('gemini-1.5-flash-002')
+    return genai.GenerativeModel('gemini-2.5-flash')
 
 def get_boj_problem_with_gemini(model, problem_id):
     """Gemini API의 웹 검색 기능을 사용하여 백준 문제 정보를 수집합니다."""
