@@ -73,7 +73,7 @@ try:
             print(f'⚠️ {personal_webhook_key} 환경변수가 설정되지 않았습니다. 기본 채널로 전송합니다.')
     
     # 개인 웹훅이 없으면 기본 채널 웹훅 사용
-    if not webhook_url:
+    if not webhook_url: 
         webhook_url = os.environ.get('MATTERMOST_WEBHOOK_URL')
         print('📢 기본 채널로 알림 전송')
     

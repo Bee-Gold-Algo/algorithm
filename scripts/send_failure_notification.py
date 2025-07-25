@@ -12,7 +12,7 @@ try:
     passed = results.get('passed_problems', 0)
     partial = results.get('partial_passed_problems', 0)
     failed = results.get('failed_problems', 0)
-    error = results.get('error_problems', 0)
+    error = results.get('error_problems', 0) 
     
     # 실패 상세 정보
     failure_details = []
