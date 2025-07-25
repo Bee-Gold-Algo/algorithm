@@ -171,8 +171,8 @@ jobs:
             echo "📊 테스트 결과 분석 중..."
             
             # Python으로 결과 분석
-            python -c "
-            import json
+            python -c 
+            "import json
             import os
 
             with open('test_results_summary.json', 'r', encoding='utf-8') as f:
@@ -194,8 +194,7 @@ jobs:
                 f.write(f'success_rate={round((passed_problems + partial_passed) / max(total_problems, 1) * 100, 1)}\n')
 
             print(f'전체 결과: {\"성공\" if overall_success else \"실패\"}')
-            print(f'성공/부분성공: {passed_problems + partial_passed}/{total_problems}')
-            "
+            print(f'성공/부분성공: {passed_problems + partial_passed}/{total_problems}')"
           else
             echo "❌ 테스트 결과 파일을 찾을 수 없습니다."
             echo "overall_result=FAIL" >> $GITHUB_OUTPUT
@@ -291,8 +290,8 @@ jobs:
           echo "📢 성공 알림 전송 중..."
           
           # Python으로 상세한 알림 메시지 생성
-          python -c "
-          import json
+          python -c 
+          "import json
           import subprocess
           import os
 
@@ -369,8 +368,7 @@ jobs:
               print('✅ 성공 알림 전송 완료')
               
           except Exception as e:
-              print(f'❌ 알림 전송 실패: {e}')
-          "
+              print(f'❌ 알림 전송 실패: {e}')"
 
       # 16. 상세한 실패 알림 전송
       - name: Send detailed failure notification
@@ -379,8 +377,8 @@ jobs:
           echo "📢 실패 알림 전송 중..."
           
           # Python으로 상세한 실패 알림 메시지 생성
-          python -c "
-          import json
+          python -c 
+          "import json
           import subprocess
           import os
           import tempfile
@@ -449,8 +447,7 @@ jobs:
               print('✅ 실패 알림 전송 완료')
               
           except Exception as e:
-              print(f'❌ 알림 전송 실패: {e}')
-          "
+              print(f'❌ 알림 전송 실패: {e}')"
 
       # 17. PR에 상세한 테스트 결과 댓글 작성
       - name: Comment detailed test results
