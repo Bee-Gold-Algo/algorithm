@@ -48,7 +48,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install google-genai pytz beautifulsoup4 requests
 
-        # 5. Gemini API 환경 테스트 (최신 버전)
+      # 5. Gemini API 환경 테스트 (최신 버전)
       - name: Test Gemini API environment
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -117,16 +117,14 @@ jobs:
               sys.exit(1)
           EOF
               
-              # Python 파일 실행
-              python test_gemini_api.py
-              
-              # 네트워크 연결 테스트
-              echo "📡 네트워크 연결 테스트..."
-              curl -I https://generativelanguage.googleapis.com/ --max-time 10 || echo "⚠️ Gemini API 엔드포인트 직접 접근 제한됨"
-              curl -I https://solved.ac/ --max-time 10 || echo "⚠️ solved.ac 접근 제한됨"
+          # Python 파일 실행
+          python test_gemini_api.py
+          
+          # 네트워크 연결 테스트
+          echo "📡 네트워크 연결 테스트..."
+          curl -I https://generativelanguage.googleapis.com/ --max-time 10 || echo "⚠️ Gemini API 엔드포인트 직접 접근 제한됨"
+          curl -I https://solved.ac/ --max-time 10 || echo "⚠️ solved.ac 접근 제한됨"
 
-
-      
       # 6. PR에서 문제 및 코드 정보 추출 (GitHub API 사용으로 변경)
       - name: Extract problem and code info
         id: extract-info
@@ -196,57 +194,57 @@ jobs:
               print(f'전체 결과: {\"성공\" if overall_success else \"실패\"}')
               print(f'성공/부분성공: {passed_problems + partial_passed}/{total_problems}')
               "
-                        else
-                          echo "❌ 테스트 결과 파일을 찾을 수 없습니다."
-                          echo "overall_result=FAIL" >> $GITHUB_OUTPUT
-                          echo "total_problems=0" >> $GITHUB_OUTPUT
-                        fi
+          else
+            echo "❌ 테스트 결과 파일을 찾을 수 없습니다."
+            echo "overall_result=FAIL" >> $GITHUB_OUTPUT
+            echo "total_problems=0" >> $GITHUB_OUTPUT
+          fi
 
-                    # 10. README.md 업데이트 (성공한 문제들만)
-                    - name: Update README for successful problems
-                      if: steps.analyze-results.outputs.overall_result == 'PASS'
-                      run: |
-                        echo "📝 성공한 문제들의 README.md 업데이트 중..."
-                        
-                        # Python으로 성공한 문제들 처리
-                        python -c "
-              import json
-              import subprocess
-              import sys
-              from datetime import datetime
+      # 10. README.md 업데이트 (성공한 문제들만)
+      - name: Update README for successful problems
+        if: steps.analyze-results.outputs.overall_result == 'PASS'
+        run: |
+          echo "📝 성공한 문제들의 README.md 업데이트 중..."
+          
+          # Python으로 성공한 문제들 처리
+          python -c "
+          import json
+          import subprocess
+          import sys
+          from datetime import datetime
 
-              try:
-                  with open('test_results_summary.json', 'r', encoding='utf-8') as f:
-                      results = json.load(f)
+          try:
+              with open('test_results_summary.json', 'r', encoding='utf-8') as f:
+                  results = json.load(f)
+              
+              successful_problems = []
+              for detail in results.get('details', []):
+                  if detail['result'] in ['PASS', 'PARTIAL_PASS']:
+                      successful_problems.append(detail)
+              
+              print(f'README 업데이트 대상: {len(successful_problems)}개 문제')
+              
+              for problem in successful_problems:
+                  cmd = [
+                      'python', 'scripts/update_readme.py',
+                      '--problem-id', problem['problem_id'],
+                      '--author', problem['author'],
+                      '--submission-date', datetime.now().strftime('%Y-%m-%d'),
+                      '--language', 'Java'
+                  ]
                   
-                  successful_problems = []
-                  for detail in results.get('details', []):
-                      if detail['result'] in ['PASS', 'PARTIAL_PASS']:
-                          successful_problems.append(detail)
-                  
-                  print(f'README 업데이트 대상: {len(successful_problems)}개 문제')
-                  
-                  for problem in successful_problems:
-                      cmd = [
-                          'python', 'scripts/update_readme.py',
-                          '--problem-id', problem['problem_id'],
-                          '--author', problem['author'],
-                          '--submission-date', datetime.now().strftime('%Y-%m-%d'),
-                          '--language', 'Java'
-                      ]
+                  try:
+                      subprocess.run(cmd, check=True, timeout=30)
+                      print(f'✅ 문제 {problem[\"problem_id\"]} README 업데이트 완료')
+                  except Exception as e:
+                      print(f'⚠️ 문제 {problem[\"problem_id\"]} README 업데이트 실패: {e}')
                       
-                      try:
-                          subprocess.run(cmd, check=True, timeout=30)
-                          print(f'✅ 문제 {problem[\"problem_id\"]} README 업데이트 완료')
-                      except Exception as e:
-                          print(f'⚠️ 문제 {problem[\"problem_id\"]} README 업데이트 실패: {e}')
-                          
-              except Exception as e:
-                  print(f'❌ README 업데이트 중 오류: {e}')
-                  sys.exit(1)
-              "
+          except Exception as e:
+              print(f'❌ README 업데이트 중 오류: {e}')
+              sys.exit(1)
+          "
 
-      # 9. Gemini 검색 실패 시 대안 처리
+      # 11. Gemini 검색 실패 시 대안 처리
       - name: Handle Gemini search failure
         if: steps.check-validity.outputs.skip_tests == 'false' && steps.search-problem.outputs.search_success != 'true'
         run: |
@@ -318,7 +316,7 @@ jobs:
           
           echo "⚠️ 대안 정보 파일 생성 완료"
 
-      # 10. 검색 결과 확인 및 검증
+      # 12. 검색 결과 확인 및 검증
       - name: Verify search results
         if: steps.check-validity.outputs.skip_tests == 'false'
         run: |
@@ -340,7 +338,7 @@ jobs:
             echo "❌ sample_tests.json 파일 없음"
           fi
 
-      # 11. Gemini 2.5-flash API로 반례 테스트케이스 생성
+      # 13. Gemini 2.5-flash API로 반례 테스트케이스 생성
       - name: Generate test cases with Gemini 2.5-flash
         if: steps.check-validity.outputs.skip_tests == 'false'
         env:
@@ -352,30 +350,6 @@ jobs:
             --code-file ${{ steps.extract-info.outputs.code_file }} \
             --language ${{ steps.extract-info.outputs.language }} \
             --problem-info problem_info.json
-
-
-      # 12. 모든 테스트 실행
-      - name: Run all tests
-        if: steps.check-validity.outputs.skip_tests == 'false'
-        id: run-tests
-        run: |
-          echo "🧪 모든 테스트 실행 중..."
-          python scripts/test_runner.py \
-            --code-file ${{ steps.extract-info.outputs.code_file }} \
-            --language ${{ steps.extract-info.outputs.language }} \
-            --sample-tests sample_tests.json \
-            --generated-tests generated_tests.json
-
-      # 13. 테스트 통과 시 README.md 업데이트
-      - name: Update README on success
-        if: steps.run-tests.outputs.result == 'PASS'
-        run: |
-          echo "📝 README.md 업데이트 중..."
-          python scripts/update_readme.py \
-            --problem-id ${{ steps.extract-info.outputs.problem_id }} \
-            --author ${{ steps.extract-info.outputs.author }} \
-            --submission-date $(date '+%Y-%m-%d') \
-            --language ${{ steps.extract-info.outputs.language }}
 
       # 14. README.md 변경사항을 PR 브랜치에 커밋 및 푸시
       - name: Commit and Push README changes
@@ -395,6 +369,7 @@ jobs:
             echo "README.md에 변경사항이 없어 커밋하지 않습니다."
           fi
 
+      # 15. 상세한 성공 알림 전송
       - name: Send detailed success notification
         if: steps.analyze-results.outputs.overall_result == 'PASS'
         run: |
@@ -482,7 +457,7 @@ jobs:
               print(f'❌ 알림 전송 실패: {e}')
           "
 
-      # 13. 상세한 MatterMost 알림 (실패 케이스)
+      # 16. 상세한 실패 알림 전송
       - name: Send detailed failure notification
         if: steps.analyze-results.outputs.overall_result == 'FAIL'
         run: |
@@ -562,7 +537,7 @@ jobs:
                 print(f'❌ 알림 전송 실패: {e}')
             "
 
-      # 14. PR에 상세한 테스트 결과 댓글 작성
+      # 17. PR에 상세한 테스트 결과 댓글 작성
       - name: Comment detailed test results
         if: always() && steps.check-validity.outputs.skip_tests == 'false'
         uses: actions/github-script@v6
@@ -592,83 +567,83 @@ jobs:
                 repo: context.repo.repo,
                 body: `## ❌ 테스트 실행 실패
                 
-              테스트 결과를 가져올 수 없습니다. 로그를 확인해주세요.`
-                            });
-                            return;
-                          }
-                          
-                          // 결과 요약
-                          const passed = results.passed_problems || 0;
-                          const partial = results.partial_passed_problems || 0;
-                          const failed = results.failed_problems || 0;
-                          const successRate = Math.round((passed + partial) / Math.max(total_problems, 1) * 100 * 10) / 10;
-                          
-                          let body = `## 📊 다중 문제 테스트 결과
-                          
-              **전체 결과**: ${overall_result === 'PASS' ? '✅ 성공' : '❌ 실패'} (성공률: ${successRate}%)
+            테스트 결과를 가져올 수 없습니다. 로그를 확인해주세요.`
+              });
+              return;
+            }
+            
+            // 결과 요약
+            const passed = results.passed_problems || 0;
+            const partial = results.partial_passed_problems || 0;
+            const failed = results.failed_problems || 0;
+            const successRate = Math.round((passed + partial) / Math.max(total_problems, 1) * 100 * 10) / 10;
+            
+            let body = `## 📊 다중 문제 테스트 결과
+            
+            **전체 결과**: ${overall_result === 'PASS' ? '✅ 성공' : '❌ 실패'} (성공률: ${successRate}%)
 
-              | 구분 | 완전 성공 | 부분 성공 | 실패 | 전체 |
-              |------|-----------|-----------|------|------|
-              | 개수 | ${passed}개 | ${partial}개 | ${failed}개 | ${total_problems}개 |
+            | 구분 | 완전 성공 | 부분 성공 | 실패 | 전체 |
+            |------|-----------|-----------|------|------|
+            | 개수 | ${passed}개 | ${partial}개 | ${failed}개 | ${total_problems}개 |
 
-              `;
-                          
-                        // 각 문제별 상세 결과
-                        if (results.details && results.details.length > 0) {
-                          body += `### 📝 문제별 상세 결과\n\n`;
-                          
-                          for (const detail of results.details) {
-                            const statusEmoji = {
-                              'PASS': '✅',
-                              'PARTIAL_PASS': '⚠️',
-                              'FAIL': '❌',
-                              'ERROR': '💥'
-                            }[detail.result] || '❓';
-                            
-                            body += `#### ${statusEmoji} 문제 ${detail.problem_id} (${detail.author})\n`;
-                            body += `- **결과**: ${detail.result}\n`;
-                            body += `- **검색**: ${detail.search_success ? '성공' : '실패'}\n`;
-                            
-                            if (detail.sample_tests && detail.sample_tests.total > 0) {
-                              const st = detail.sample_tests;
-                              body += `- **샘플 테스트**: ${st.passed}/${st.total} 통과\n`;
-                            }
-                            
-                            if (detail.generated_tests && detail.generated_tests.total > 0) {
-                              const gt = detail.generated_tests;
-                              body += `- **생성 테스트**: ${gt.passed}/${gt.total} 통과\n`;
-                            }
-                            
-                            if (detail.errors && detail.errors.length > 0) {
-                              body += `- **오류**: ${detail.errors[0]}\n`;
-                            }
-                            
-                            body += `\n`;
-                          }
-                        }
-                        
-                        // 결론
-                        if (overall_result === 'PASS') {
-                          body += `### 🎉 테스트 통과!
-                          
+            `;
+            
+            // 각 문제별 상세 결과
+            if (results.details && results.details.length > 0) {
+              body += `### 📝 문제별 상세 결과\n\n`;
+              
+              for (const detail of results.details) {
+                const statusEmoji = {
+                  'PASS': '✅',
+                  'PARTIAL_PASS': '⚠️',
+                  'FAIL': '❌',
+                  'ERROR': '💥'
+                }[detail.result] || '❓';
+                
+                body += `#### ${statusEmoji} 문제 ${detail.problem_id} (${detail.author})\n`;
+                body += `- **결과**: ${detail.result}\n`;
+                body += `- **검색**: ${detail.search_success ? '성공' : '실패'}\n`;
+                
+                if (detail.sample_tests && detail.sample_tests.total > 0) {
+                  const st = detail.sample_tests;
+                  body += `- **샘플 테스트**: ${st.passed}/${st.total} 통과\n`;
+                }
+                
+                if (detail.generated_tests && detail.generated_tests.total > 0) {
+                  const gt = detail.generated_tests;
+                  body += `- **생성 테스트**: ${gt.passed}/${gt.total} 통과\n`;
+                }
+                
+                if (detail.errors && detail.errors.length > 0) {
+                  body += `- **오류**: ${detail.errors[0]}\n`;
+                }
+                
+                body += `\n`;
+              }
+            }
+            
+            // 결론
+            if (overall_result === 'PASS') {
+              body += `### 🎉 테스트 통과!
+              
             한 문제 이상이 성공했으므로 **PR이 승인됩니다**.
             실패한 문제들은 BOJ 사이트에서 직접 확인 후 수정해주세요.
 
             브랜치를 병합하고 삭제해주세요! 🚀`;
-                        } else {
-                          body += `### ❌ 테스트 실패
-                          
+            } else {
+              body += `### ❌ 테스트 실패
+              
             모든 문제가 실패했습니다. 코드를 수정한 후 다시 푸시해주세요.
 
             💡 **팁**: 각 문제별 오류 메시지를 확인하여 수정해보세요.`;
-                        }
-                        
-                        await github.rest.issues.createComment({
-                          issue_number: context.issue.number,
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          body: body
-                        });
+            }
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
 
       # 18. Gemini 2.5-flash 검색 결과 업로드 (디버그용)
       - name: Upload Gemini 2.5-flash search results
@@ -681,7 +656,6 @@ jobs:
             sample_tests.json
             generated_tests.json
           retention-days: 7
-
 
   # 데드라인 알림 작업
   deadline-reminder:
