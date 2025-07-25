@@ -208,48 +208,48 @@ print(f'성공/부분성공: {passed_problems + partial_passed}/{total_problems}
         run: |
           if [ -f "test_results_summary.json" ]; then
             echo "📊 테스트 결과 분석 중..."
-            # 'python -c' 다음에 오는 코드 블록의 모든 줄에서 앞쪽 공백을 제거합니다.
-            python -c 
-          "import json
-          import subprocess
-          import sys
-          from datetime import datetime
+            python << 'EOF'
+import json
+import subprocess
+import sys
+from datetime import datetime
 
-          try:
-              with open('test_results_summary.json', 'r', encoding='utf-8') as f:
-                  results = json.load(f)
-              
-              successful_problems = []
-              for detail in results.get('details', []):
-                  if detail['result'] in ['PASS', 'PARTIAL_PASS']:
-                      successful_problems.append(detail)
-              
-              if successful_problems:
-                print(f'✅ README 업데이트 대상: {len(successful_problems)}개 문제')
-              
-              for problem in successful_problems:
-                  problem_id = problem['problem_id']
-                  author = problem['author']
-                  
-                  cmd = [
-                      'python', 'scripts/update_readme.py',
-                      '--problem-id', problem_id,
-                      '--author', author,
-                      '--submission-date', datetime.now().strftime('%Y-%m-%d'),
-                      '--language', 'Java'
-                  ]
-                  
-                  try:
-                      subprocess.run(cmd, check=True, timeout=30)
-                      print(f'  - 문제 {problem_id} README 업데이트 완료')
-                  except Exception as e:
-                      print(f'  - ⚠️ 문제 {problem_id} README 업데이트 실패: {e}')
-                      
-          except FileNotFoundError:
-              print('ℹ️ test_results_summary.json 파일이 없어 README 업데이트를 건너뜁니다.')
-          except Exception as e:
-              print(f'❌ README 업데이트 중 오류: {e}')
-              sys.exit(1)"
+try:
+    with open('test_results_summary.json', 'r', encoding='utf-8') as f:
+        results = json.load(f)
+    
+    successful_problems = []
+    for detail in results.get('details', []):
+        if detail['result'] in ['PASS', 'PARTIAL_PASS']:
+            successful_problems.append(detail)
+    
+    if successful_problems:
+        print(f'✅ README 업데이트 대상: {len(successful_problems)}개 문제')
+    
+    for problem in successful_problems:
+        problem_id = problem['problem_id']
+        author = problem['author']
+        
+        cmd = [
+            'python', 'scripts/update_readme.py',
+            '--problem-id', problem_id,
+            '--author', author,
+            '--submission-date', datetime.now().strftime('%Y-%m-%d'),
+            '--language', 'Java'
+        ]
+        
+        try:
+            subprocess.run(cmd, check=True, timeout=30)
+            print(f'  - 문제 {problem_id} README 업데이트 완료')
+        except Exception as e:
+            print(f'  - ⚠️ 문제 {problem_id} README 업데이트 실패: {e}')
+            
+except FileNotFoundError:
+    print('ℹ️ test_results_summary.json 파일이 없어 README 업데이트를 건너뜁니다.')
+except Exception as e:
+    print(f'❌ README 업데이트 중 오류: {e}')
+    sys.exit(1)
+EOF
           fi
 
       # 11. 테스트 완료 확인
@@ -291,85 +291,84 @@ print(f'성공/부분성공: {passed_problems + partial_passed}/{total_problems}
           echo "📢 성공 알림 전송 중..."
           
           # Python으로 상세한 알림 메시지 생성
-          python -c 
-          "import json
-          import subprocess
-          import os
+          python << 'EOF'
+import json
+import subprocess
+import os
+import tempfile
 
-          try:
-              with open('test_results_summary.json', 'r', encoding='utf-8') as f:
-                  results = json.load(f)
-              
-              total = results.get('total_problems', 0)
-              passed = results.get('passed_problems', 0)
-              partial = results.get('partial_passed_problems', 0)
-              failed = results.get('failed_problems', 0)
-              
-              # 성공한 문제들 목록
-              success_list = []
-              partial_list = []
-              failed_list = []
-              
-              for detail in results.get('details', []):
-                  problem_id = detail['problem_id']
-                  author = detail['author']
-                  result = detail['result']
-                  
-                  if result == 'PASS':
-                      success_list.append(f'**{problem_id}** ({author})')
-                  elif result == 'PARTIAL_PASS':
-                      partial_list.append(f'**{problem_id}** ({author})')
-                  else:
-                      failed_list.append(f'**{problem_id}** ({author})')
-              
-              # 메시지 구성
-              message_parts = [
-                  '🎉 **Multiple Problems Test Results**',
-                  f'**Total**: {total}개 | **Success**: {passed}개 | **Partial**: {partial}개 | **Failed**: {failed}개',
-                  f'**Success Rate**: {round((passed + partial) / max(total, 1) * 100, 1)}%',
-                  f'**PR**: ${{ github.event.pull_request.html_url }}'
-              ]
-              
-              if success_list:
-                  message_parts.append(f'**✅ 완전 성공**: {\" | \".join(success_list)}')
-              
-              if partial_list:
-                  message_parts.append(f'**⚠️ 부분 성공**: {\" | \".join(partial_list)}')
-              
-              if failed_list:
-                  message_parts.append(f'**❌ 실패**: {\" | \".join(failed_list)}')
-              
-              message_parts.append('🎯 한 문제 이상 성공으로 PR 승인됩니다!')
-              
-              message = '\\n\\n'.join(message_parts)
-              
-              # MatterMost 알림 전송
-              payload = {
-                  'username': 'BOJ-Bot',
-                  'icon_emoji': ':white_check_mark:',
-                  'text': message
-              }
-              
-              import subprocess
-              import tempfile
-              
-              with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                  json.dump(payload, f)
-                  payload_file = f.name
-              
-              subprocess.run([
-                  'curl', '-X', 'POST',
-                  '-H', 'Content-Type: application/json',
-                  '-d', f'@{payload_file}',
-                  '${{ secrets.MATTERMOST_WEBHOOK_URL }}',
-                  '--fail', '--silent', '--show-error'
-              ], check=True)
-              
-              os.unlink(payload_file)
-              print('✅ 성공 알림 전송 완료')
-              
-          except Exception as e:
-              print(f'❌ 알림 전송 실패: {e}')"
+try:
+    with open('test_results_summary.json', 'r', encoding='utf-8') as f:
+        results = json.load(f)
+    
+    total = results.get('total_problems', 0)
+    passed = results.get('passed_problems', 0)
+    partial = results.get('partial_passed_problems', 0)
+    failed = results.get('failed_problems', 0)
+    
+    # 성공한 문제들 목록
+    success_list = []
+    partial_list = []
+    failed_list = []
+    
+    for detail in results.get('details', []):
+        problem_id = detail['problem_id']
+        author = detail['author']
+        result = detail['result']
+        
+        if result == 'PASS':
+            success_list.append(f'**{problem_id}** ({author})')
+        elif result == 'PARTIAL_PASS':
+            partial_list.append(f'**{problem_id}** ({author})')
+        else:
+            failed_list.append(f'**{problem_id}** ({author})')
+    
+    # 메시지 구성
+    message_parts = [
+        '🎉 **Multiple Problems Test Results**',
+        f'**Total**: {total}개 | **Success**: {passed}개 | **Partial**: {partial}개 | **Failed**: {failed}개',
+        f'**Success Rate**: {round((passed + partial) / max(total, 1) * 100, 1)}%',
+        f'**PR**: ${{ github.event.pull_request.html_url }}'
+    ]
+    
+    if success_list:
+        message_parts.append(f'**✅ 완전 성공**: {" | ".join(success_list)}')
+    
+    if partial_list:
+        message_parts.append(f'**⚠️ 부분 성공**: {" | ".join(partial_list)}')
+    
+    if failed_list:
+        message_parts.append(f'**❌ 실패**: {" | ".join(failed_list)}')
+    
+    message_parts.append('🎯 한 문제 이상 성공으로 PR 승인됩니다!')
+    
+    message = '\\n\\n'.join(message_parts)
+    
+    # MatterMost 알림 전송
+    payload = {
+        'username': 'BOJ-Bot',
+        'icon_emoji': ':white_check_mark:',
+        'text': message
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(payload, f)
+        payload_file = f.name
+    
+    subprocess.run([
+        'curl', '-X', 'POST',
+        '-H', 'Content-Type: application/json',
+        '-d', f'@{payload_file}',
+        '${{ secrets.MATTERMOST_WEBHOOK_URL }}',
+        '--fail', '--silent', '--show-error'
+    ], check=True)
+    
+    os.unlink(payload_file)
+    print('✅ 성공 알림 전송 완료')
+    
+except Exception as e:
+    print(f'❌ 알림 전송 실패: {e}')
+EOF
 
       # 16. 상세한 실패 알림 전송
       - name: Send detailed failure notification
@@ -378,77 +377,78 @@ print(f'성공/부분성공: {passed_problems + partial_passed}/{total_problems}
           echo "📢 실패 알림 전송 중..."
           
           # Python으로 상세한 실패 알림 메시지 생성
-          python -c 
-          "import json
-          import subprocess
-          import os
-          import tempfile
+          python << 'EOF'
+import json
+import subprocess
+import os
+import tempfile
 
-          try:
-              with open('test_results_summary.json', 'r', encoding='utf-8') as f:
-                  results = json.load(f)
-              
-              total = results.get('total_problems', 0)
-              passed = results.get('passed_problems', 0)
-              partial = results.get('partial_passed_problems', 0)
-              failed = results.get('failed_problems', 0)
-              error = results.get('error_problems', 0)
-              
-              # 실패 상세 정보
-              failure_details = []
-              for detail in results.get('details', []):
-                  if detail['result'] in ['FAIL', 'ERROR']:
-                      problem_id = detail['problem_id']
-                      author = detail['author']
-                      errors = detail.get('errors', [])
-                      
-                      error_summary = errors[0] if errors else '알 수 없는 오류'
-                      if len(error_summary) > 100:
-                          error_summary = error_summary[:100] + '...'
-                      
-                      failure_details.append(f'**{problem_id}** ({author}): {error_summary}')
-              
-              # 메시지 구성
-              message_parts = [
-                  '❌ **Multiple Problems Test Failed**',
-                  f'**Total**: {total}개 | **Success**: {passed}개 | **Partial**: {partial}개 | **Failed**: {failed}개 | **Error**: {error}개',
-                  f'**PR**: ${{ github.event.pull_request.html_url }}'
-              ]
-              
-              if failure_details:
-                  message_parts.append('**실패 상세:**')
-                  message_parts.extend(failure_details[:5])  # 최대 5개까지만
-                  if len(failure_details) > 5:
-                      message_parts.append(f'... 외 {len(failure_details) - 5}개 더')
-              
-              message_parts.append('💪 코드를 수정한 후 다시 푸시해주세요!')
-              
-              message = '\\n\\n'.join(message_parts)
-              
-              # MatterMost 알림 전송
-              payload = {
-                  'username': 'BOJ-Bot',
-                  'icon_emoji': ':x:',
-                  'text': message
-              }
-              
-              with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                  json.dump(payload, f)
-                  payload_file = f.name
-              
-              subprocess.run([
-                  'curl', '-X', 'POST',
-                  '-H', 'Content-Type: application/json',
-                  '-d', f'@{payload_file}',
-                  '${{ secrets.MATTERMOST_WEBHOOK_URL }}',
-                  '--fail', '--silent', '--show-error'
-              ], check=True)
-              
-              os.unlink(payload_file)
-              print('✅ 실패 알림 전송 완료')
-              
-          except Exception as e:
-              print(f'❌ 알림 전송 실패: {e}')"
+try:
+    with open('test_results_summary.json', 'r', encoding='utf-8') as f:
+        results = json.load(f)
+    
+    total = results.get('total_problems', 0)
+    passed = results.get('passed_problems', 0)
+    partial = results.get('partial_passed_problems', 0)
+    failed = results.get('failed_problems', 0)
+    error = results.get('error_problems', 0)
+    
+    # 실패 상세 정보
+    failure_details = []
+    for detail in results.get('details', []):
+        if detail['result'] in ['FAIL', 'ERROR']:
+            problem_id = detail['problem_id']
+            author = detail['author']
+            errors = detail.get('errors', [])
+            
+            error_summary = errors[0] if errors else '알 수 없는 오류'
+            if len(error_summary) > 100:
+                error_summary = error_summary[:100] + '...'
+            
+            failure_details.append(f'**{problem_id}** ({author}): {error_summary}')
+    
+    # 메시지 구성
+    message_parts = [
+        '❌ **Multiple Problems Test Failed**',
+        f'**Total**: {total}개 | **Success**: {passed}개 | **Partial**: {partial}개 | **Failed**: {failed}개 | **Error**: {error}개',
+        f'**PR**: ${{ github.event.pull_request.html_url }}'
+    ]
+    
+    if failure_details:
+        message_parts.append('**실패 상세:**')
+        message_parts.extend(failure_details[:5])  # 최대 5개까지만
+        if len(failure_details) > 5:
+            message_parts.append(f'... 외 {len(failure_details) - 5}개 더')
+    
+    message_parts.append('💪 코드를 수정한 후 다시 푸시해주세요!')
+    
+    message = '\\n\\n'.join(message_parts)
+    
+    # MatterMost 알림 전송
+    payload = {
+        'username': 'BOJ-Bot',
+        'icon_emoji': ':x:',
+        'text': message
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(payload, f)
+        payload_file = f.name
+    
+    subprocess.run([
+        'curl', '-X', 'POST',
+        '-H', 'Content-Type: application/json',
+        '-d', f'@{payload_file}',
+        '${{ secrets.MATTERMOST_WEBHOOK_URL }}',
+        '--fail', '--silent', '--show-error'
+    ], check=True)
+    
+    os.unlink(payload_file)
+    print('✅ 실패 알림 전송 완료')
+    
+except Exception as e:
+    print(f'❌ 알림 전송 실패: {e}')
+EOF
 
       # 17. PR에 상세한 테스트 결과 댓글 작성
       - name: Comment detailed test results
