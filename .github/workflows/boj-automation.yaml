@@ -222,8 +222,8 @@ jobs:
       # 15. 상세한 성공 알림 전송
       - name: Send detailed success notification
         if: steps.analyze-results.outputs.overall_result == 'PASS'
-          env:
-            PERSONAL_WEBHOOK_URL: ${{ secrets[format('{0}_MATTERMOST_URL', github.event.pull_request.user.login)] }}
+        env:
+          PERSONAL_WEBHOOK_URL: ${{ secrets[format('{0}_MATTERMOST_URL', github.event.pull_request.user.login)] }}
         run: |
           echo "📢 성공 알림 전송 중..."
 
