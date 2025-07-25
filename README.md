@@ -7,4 +7,4 @@
 | 1000 | 문제 1000 | yeomin4242 | 2025-07-25 | Java | ✅ |
 | 1001 | 문제 1001 | yeomin4242 | 2025-07-25 | Java | ✅ |
 | 2557 | 문제 2557 | yeomin4242 | 2025-07-25 | Java | ✅ |---
-*Last updated: 2025-07-25 15:36 by GitHub Actions* 🤖
+*Last updated: 2025-07-25 15:47 by GitHub Actions* 🤖
