@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 scripts/fetch_boj_problem.py
-새로운 Gemini API의 Google Search 기능을 활용하여 백준 문제 정보를 수집합니다.
-google_search 도구와 gemini-2.5-flash 모델 사용.
+최신 Gemini 2.5-flash API의 Google Search 기능을 활용하여 백준 문제 정보를 수집합니다.
 """
 
 import argparse
@@ -47,7 +46,7 @@ def get_solved_ac_info(problem_id):
     }
 
 def setup_gemini_client():
-    """새로운 Gemini API 클라이언트를 설정합니다."""
+    """최신 Gemini API 클라이언트를 설정합니다."""
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
         raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
@@ -56,28 +55,28 @@ def setup_gemini_client():
         from google import genai
         from google.genai import types
         
-        # 클라이언트 설정
+        # 클라이언트 설정 (공식 문서 방식)
         client = genai.Client(api_key=api_key)
         
-        print("🔑 새로운 Gemini API 클라이언트 설정 완료")
+        print("🔑 최신 Gemini 2.5-flash API 클라이언트 설정 완료")
         return client, types
         
     except ImportError as e:
-        print(f"❌ 새로운 google-genai 라이브러리가 필요합니다: {e}")
+        print(f"❌ google-genai 라이브러리가 필요합니다: {e}")
         print("   pip install google-genai")
         raise
     except Exception as e:
         print(f"❌ Gemini 클라이언트 설정 실패: {e}")
         raise
 
-def get_boj_problem_with_new_search(client, types, problem_id):
-    """새로운 Google Search 기능을 사용하여 백준 문제 정보를 수집합니다."""
-    print(f"\n🤖 새로운 Gemini API로 문제 {problem_id} 정보 검색 중...")
+def get_boj_problem_with_google_search(client, types, problem_id):
+    """최신 Google Search 기능을 사용하여 백준 문제 정보를 수집합니다."""
+    print(f"\n🤖 Gemini 2.5-flash로 문제 {problem_id} 정보 검색 중...")
     
     prompt = f"""
-백준 온라인 저지(BOJ) 문제 {problem_id}번에 대한 정보를 검색하여 다음 항목들을 JSON 형식으로 정리해주세요:
+백준 온라인 저지(BOJ) 문제 {problem_id}번에 대한 정보를 웹에서 검색하여 다음 항목들을 JSON 형식으로 정리해주세요:
 
-검색 URL: https://www.acmicpc.net/problem/{problem_id}
+검색 대상: https://www.acmicpc.net/problem/{problem_id}
 
 추출할 정보:
 1. 문제 설명 (problem_description)
@@ -105,12 +104,12 @@ HTML 태그는 제거하고 텍스트 내용만 추출해주세요.
 """
 
     try:
-        # Google Search 도구 정의
+        # Google Search 도구 정의 (공식 문서 방식)
         grounding_tool = types.Tool(
             google_search=types.GoogleSearch()
         )
         
-        # 생성 설정 구성
+        # 생성 설정 구성 (공식 문서 방식)
         config = types.GenerateContentConfig(
             tools=[grounding_tool],
             temperature=0.1,
@@ -119,20 +118,16 @@ HTML 태그는 제거하고 텍스트 내용만 추출해주세요.
         
         print("  🔧 API 요청 실행 중...")
         
-        # 요청 실행
+        # 요청 실행 (공식 문서 방식)
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config=config
         )
         
-        print("  ✅ 새로운 Gemini API 응답 수신 완료")
+        print("  ✅ Gemini 2.5-flash 응답 수신 완료")
         
-        # 응답 구조 디버깅
-        print(f"  🔍 응답 타입: {type(response)}")
-        print(f"  🔍 응답 속성: {dir(response)}")
-        
-        # 그라운딩 메타데이터 확인 (안전하게)
+        # 그라운딩 메타데이터 출력 (디버깅용)
         try:
             if (hasattr(response, 'candidates') and response.candidates and 
                 len(response.candidates) > 0 and response.candidates[0] and
@@ -140,7 +135,6 @@ HTML 태그는 제거하고 텍스트 내용만 추출해주세요.
                 response.candidates[0].grounding_metadata):
                 
                 metadata = response.candidates[0].grounding_metadata
-                print(f"  🔍 메타데이터 타입: {type(metadata)}")
                 
                 if hasattr(metadata, 'web_search_queries') and metadata.web_search_queries:
                     print(f"  🔍 검색 쿼리: {metadata.web_search_queries}")
@@ -150,38 +144,19 @@ HTML 태그는 제거하고 텍스트 내용만 추출해주세요.
         except Exception as e:
             print(f"  ⚠️ 메타데이터 처리 중 오류 (무시): {e}")
         
-        # 응답 텍스트 안전하게 반환
-        result_text = None
-        
+        # 응답 텍스트 추출 (공식 문서 방식 - response.text 사용)
         if hasattr(response, 'text') and response.text:
-            result_text = response.text
-            print(f"  ✅ response.text에서 텍스트 추출: {len(result_text)}자")
-        elif hasattr(response, 'candidates') and response.candidates and len(response.candidates) > 0:
-            candidate = response.candidates[0]
-            print(f"  🔍 candidate 속성: {dir(candidate)}")
-            
-            if hasattr(candidate, 'content') and candidate.content:
-                content = candidate.content
-                print(f"  🔍 content 속성: {dir(content)}")
-                
-                if hasattr(content, 'parts') and content.parts:
-                    print(f"  🔍 parts 개수: {len(content.parts)}")
-                    for i, part in enumerate(content.parts):
-                        print(f"  🔍 part {i} 속성: {dir(part)}")
-                        if hasattr(part, 'text') and part.text:
-                            result_text = part.text
-                            print(f"  ✅ part[{i}].text에서 텍스트 추출: {len(result_text)}자")
-                            break
-        
-        if result_text:
-            return result_text
+            print(f"  ✅ 응답 텍스트 추출 완료: {len(response.text)}자")
+            return response.text
         else:
             print("  ❌ 응답에서 텍스트를 찾을 수 없습니다.")
             print(f"  🔍 전체 응답: {response}")
             return None
         
     except Exception as e:
-        print(f"  ❌ 새로운 Gemini API 호출 중 오류 발생: {e}")
+        print(f"  ❌ Gemini 2.5-flash API 호출 중 오류 발생: {e}")
+        import traceback
+        print(f"  🔍 상세 오류: {traceback.format_exc()}")
         return None
 
 def parse_gemini_response(response_text):
@@ -258,9 +233,9 @@ def convert_to_standard_format(gemini_data):
     print("  ✅ 데이터 형식 변환 완료")
     return standard_format
 
-def get_boj_problem_info_new_search(problem_id, max_retries=3):
-    """새로운 Google Search를 사용하여 백준 문제 정보를 수집합니다."""
-    print(f"\n🎯 문제 {problem_id} 정보 수집 시작 (새로운 Google Search)")
+def get_boj_problem_info_with_search(problem_id, max_retries=3):
+    """최신 Google Search를 사용하여 백준 문제 정보를 수집합니다."""
+    print(f"\n🎯 문제 {problem_id} 정보 수집 시작 (Gemini 2.5-flash + Google Search)")
     
     try:
         client, types = setup_gemini_client()
@@ -271,8 +246,8 @@ def get_boj_problem_info_new_search(problem_id, max_retries=3):
     for attempt in range(1, max_retries + 1):
         print(f"\n  🔄 시도 {attempt}/{max_retries}")
         
-        # 새로운 Google Search로 정보 수집
-        response_text = get_boj_problem_with_new_search(client, types, problem_id)
+        # Google Search로 정보 수집
+        response_text = get_boj_problem_with_google_search(client, types, problem_id)
         if not response_text:
             print(f"  ⚠️ 시도 {attempt} 실패")
             if attempt < max_retries:
@@ -304,7 +279,7 @@ def get_boj_problem_info_new_search(problem_id, max_retries=3):
 
 def main():
     """메인 실행 함수"""
-    parser = argparse.ArgumentParser(description='새로운 Gemini Google Search를 활용한 백준 문제 정보 수집')
+    parser = argparse.ArgumentParser(description='Gemini 2.5-flash Google Search를 활용한 백준 문제 정보 수집')
     parser.add_argument('--problem-id', required=True, help='수집할 백준 문제의 번호')
     args = parser.parse_args()
 
@@ -319,8 +294,8 @@ def main():
     # solved.ac API로 기본 정보 수집
     solved_ac_info = get_solved_ac_info(problem_id)
     
-    # 새로운 Google Search로 상세 정보 수집
-    boj_details = get_boj_problem_info_new_search(problem_id)
+    # Gemini 2.5-flash Google Search로 상세 정보 수집
+    boj_details = get_boj_problem_info_with_search(problem_id)
 
     if not boj_details:
         print(f"\n❌ 문제 {problem_id} 정보 수집 최종 실패")
@@ -347,7 +322,7 @@ def main():
             json.dump(sample_tests, f, ensure_ascii=False, indent=2)
 
         print("\n" + "="*60)
-        print("🎉 새로운 Gemini Google Search 방식 정보 수집 완료!")
+        print("🎉 Gemini 2.5-flash Google Search 정보 수집 완료!")
         print(f"  📝 제목: {complete_info['title']} (레벨: {complete_info['level']})")
         print(f"  🏷️ 태그: {', '.join(complete_info.get('tags', []))}")
         print(f"  📊 추출된 예제: {len(complete_info.get('samples', []))}개")
