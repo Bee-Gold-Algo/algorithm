@@ -52,9 +52,27 @@ try:
         'text': message
     }
     
-    webhook_url = os.environ.get('MATTERMOST_WEBHOOK_URL')
+    # PR 작성자 정보 가져오기 (두 번째 인자)
+    pr_author = sys.argv[2] if len(sys.argv) > 2 else None
+    
+    webhook_url = None
+    if pr_author:
+        # 개인 DM 웹훅 URL 시도 (예: YEOMIN4242_MATTERMOST_URL)
+        personal_webhook_key = f"{pr_author.upper()}_MATTERMOST_URL"
+        webhook_url = os.environ.get(personal_webhook_key)
+        
+        if webhook_url:
+            print(f'📩 개인 DM으로 알림 전송: {pr_author}')
+        else:
+            print(f'⚠️ {personal_webhook_key} 환경변수가 설정되지 않았습니다. 기본 채널로 전송합니다.')
+    
+    # 개인 웹훅이 없으면 기본 채널 웹훅 사용
     if not webhook_url:
-        print('⚠️ MATTERMOST_WEBHOOK_URL이 설정되지 않았습니다.')
+        webhook_url = os.environ.get('MATTERMOST_WEBHOOK_URL')
+        print('📢 기본 채널로 알림 전송')
+    
+    if not webhook_url:
+        print('❌ 사용 가능한 MATTERMOST 웹훅 URL이 없습니다.')
         sys.exit(0)
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
