@@ -117,6 +117,8 @@ HTML 태그는 제거하고 텍스트 내용만 추출해주세요.
             max_output_tokens=8192
         )
         
+        print("  🔧 API 요청 실행 중...")
+        
         # 요청 실행
         response = client.models.generate_content(
             model="gemini-2.5-flash",
@@ -126,15 +128,57 @@ HTML 태그는 제거하고 텍스트 내용만 추출해주세요.
         
         print("  ✅ 새로운 Gemini API 응답 수신 완료")
         
-        # 그라운딩 메타데이터 확인
-        if hasattr(response.candidates[0], 'grounding_metadata') and response.candidates[0].grounding_metadata:
-            metadata = response.candidates[0].grounding_metadata
-            if hasattr(metadata, 'web_search_queries'):
-                print(f"  🔍 검색 쿼리: {metadata.web_search_queries}")
-            if hasattr(metadata, 'grounding_chunks'):
-                print(f"  📚 검색 소스: {len(metadata.grounding_chunks)}개")
+        # 응답 구조 디버깅
+        print(f"  🔍 응답 타입: {type(response)}")
+        print(f"  🔍 응답 속성: {dir(response)}")
         
-        return response.text
+        # 그라운딩 메타데이터 확인 (안전하게)
+        try:
+            if (hasattr(response, 'candidates') and response.candidates and 
+                len(response.candidates) > 0 and response.candidates[0] and
+                hasattr(response.candidates[0], 'grounding_metadata') and 
+                response.candidates[0].grounding_metadata):
+                
+                metadata = response.candidates[0].grounding_metadata
+                print(f"  🔍 메타데이터 타입: {type(metadata)}")
+                
+                if hasattr(metadata, 'web_search_queries') and metadata.web_search_queries:
+                    print(f"  🔍 검색 쿼리: {metadata.web_search_queries}")
+                
+                if hasattr(metadata, 'grounding_chunks') and metadata.grounding_chunks is not None:
+                    print(f"  📚 검색 소스: {len(metadata.grounding_chunks)}개")
+        except Exception as e:
+            print(f"  ⚠️ 메타데이터 처리 중 오류 (무시): {e}")
+        
+        # 응답 텍스트 안전하게 반환
+        result_text = None
+        
+        if hasattr(response, 'text') and response.text:
+            result_text = response.text
+            print(f"  ✅ response.text에서 텍스트 추출: {len(result_text)}자")
+        elif hasattr(response, 'candidates') and response.candidates and len(response.candidates) > 0:
+            candidate = response.candidates[0]
+            print(f"  🔍 candidate 속성: {dir(candidate)}")
+            
+            if hasattr(candidate, 'content') and candidate.content:
+                content = candidate.content
+                print(f"  🔍 content 속성: {dir(content)}")
+                
+                if hasattr(content, 'parts') and content.parts:
+                    print(f"  🔍 parts 개수: {len(content.parts)}")
+                    for i, part in enumerate(content.parts):
+                        print(f"  🔍 part {i} 속성: {dir(part)}")
+                        if hasattr(part, 'text') and part.text:
+                            result_text = part.text
+                            print(f"  ✅ part[{i}].text에서 텍스트 추출: {len(result_text)}자")
+                            break
+        
+        if result_text:
+            return result_text
+        else:
+            print("  ❌ 응답에서 텍스트를 찾을 수 없습니다.")
+            print(f"  🔍 전체 응답: {response}")
+            return None
         
     except Exception as e:
         print(f"  ❌ 새로운 Gemini API 호출 중 오류 발생: {e}")
