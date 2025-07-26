@@ -95,3 +95,7 @@ MATTERMOST_WEBHOOK_URL=your_default_channel_webhook  # 기본 채널용
 ---
 
 _Auto-updated by GitHub Actions 🤖_
+
+
+---
+*Auto-updated by GitHub Actions 🤖*
