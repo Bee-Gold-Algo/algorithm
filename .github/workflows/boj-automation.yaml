@@ -1,377 +1,377 @@
-# GitHub Actions 워크플로우 이름
-name: BOJ Study Automation (Gemini API)
+# # GitHub Actions 워크플로우 이름
+# name: BOJ Study Automation (Gemini API)
 
-# 워크플로우 실행 조건
-on:
-  pull_request:
-    branches: [main]
+# # 워크플로우 실행 조건
+# on:
+#   pull_request:
+#     branches: [main]
 
-# 실행될 작업(Job) 목록
-jobs:
-  # PR 검증 및 자동 병합 작업
-  test-and-merge:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+# # 실행될 작업(Job) 목록
+# jobs:
+#   # PR 검증 및 자동 병합 작업
+#   test-and-merge:
+#     if: github.event_name == 'pull_request'
+#     runs-on: ubuntu-latest
 
-    # 작업에 필요한 권한 설정
-    permissions:
-      contents: write # README.md 업데이트 및 커밋/푸시를 위해 필요
-      pull-requests: write # PR에 테스트 결과 댓글을 작성하기 위해 필요
+#     # 작업에 필요한 권한 설정
+#     permissions:
+#       contents: write # README.md 업데이트 및 커밋/푸시를 위해 필요
+#       pull-requests: write # PR에 테스트 결과 댓글을 작성하기 위해 필요
 
-    steps:
-      # 1. 코드 체크아웃
-      # PR 브랜치 자체를 가져와 'Detached HEAD' 문제를 해결합니다.
-      - name: Checkout PR Branch
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ github.event.pull_request.head.ref }}
+#     steps:
+#       # 1. 코드 체크아웃
+#       # PR 브랜치 자체를 가져와 'Detached HEAD' 문제를 해결합니다.
+#       - name: Checkout PR Branch
+#         uses: actions/checkout@v4
+#         with:
+#           token: ${{ secrets.GITHUB_TOKEN }}
+#           ref: ${{ github.event.pull_request.head.ref }}
 
-      # 2. Python 환경 설정
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
+#       # 2. Python 환경 설정
+#       - name: Setup Python
+#         uses: actions/setup-python@v4
+#         with:
+#           python-version: "3.11"
 
-      # 3. Java 환경 설정
-      - name: Setup Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: "temurin"
-          java-version: "11"
+#       # 3. Java 환경 설정
+#       - name: Setup Java
+#         uses: actions/setup-java@v3
+#         with:
+#           distribution: "temurin"
+#           java-version: "11"
 
-      # 4. Python 의존성 설치 (Gemini API 기반)
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install google-genai pytz beautifulsoup4 requests
+#       # 4. Python 의존성 설치 (Gemini API 기반)
+#       - name: Install Python dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install google-genai pytz beautifulsoup4 requests
 
-      # 5. Gemini API 환경 테스트 (최신 버전)
-      - name: Test Gemini API environment
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          echo "🤖 Gemini 2.5-flash API 환경 테스트..."
-          echo "Python version: $(python --version)"
+#       # 5. Gemini API 환경 테스트 (최신 버전)
+#       - name: Test Gemini API environment
+#         env:
+#           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+#         run: |
+#           echo "🤖 Gemini 2.5-flash API 환경 테스트..."
+#           echo "Python version: $(python --version)"
 
-          # Gemini API 키 확인
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "❌ GEMINI_API_KEY가 설정되지 않았습니다."
-            exit 1
-          else
-            echo "✅ GEMINI_API_KEY 설정 확인됨"
-          fi
+#           # Gemini API 키 확인
+#           if [ -z "$GEMINI_API_KEY" ]; then
+#             echo "❌ GEMINI_API_KEY가 설정되지 않았습니다."
+#             exit 1
+#           else
+#             echo "✅ GEMINI_API_KEY 설정 확인됨"
+#           fi
 
-          # 설치된 라이브러리 확인
-          echo "📦 설치된 라이브러리 확인..."
-          pip list | grep -E "(google|genai)" || echo "⚠️ google 관련 패키지를 찾을 수 없습니다."
+#           # 설치된 라이브러리 확인
+#           echo "📦 설치된 라이브러리 확인..."
+#           pip list | grep -E "(google|genai)" || echo "⚠️ google 관련 패키지를 찾을 수 없습니다."
 
-          # 별도 Python 파일 생성 및 실행
-          echo "📦 google-genai 라이브러리 테스트..."
-          cat > test_gemini_api.py << 'EOF'
-          import os
-          import sys
+#           # 별도 Python 파일 생성 및 실행
+#           echo "📦 google-genai 라이브러리 테스트..."
+#           cat > test_gemini_api.py << 'EOF'
+#           import os
+#           import sys
 
-          print("🔍 Gemini 2.5-flash API 연결 테스트...")
+#           print("🔍 Gemini 2.5-flash API 연결 테스트...")
 
-          try:
-              from google import genai
-              from google.genai import types
-              print("✅ google-genai 라이브러리 import 성공")
+#           try:
+#               from google import genai
+#               from google.genai import types
+#               print("✅ google-genai 라이브러리 import 성공")
               
-              # 클라이언트 설정 테스트
-              client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-              print("✅ Gemini 2.5-flash API 클라이언트 생성 성공")
+#               # 클라이언트 설정 테스트
+#               client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+#               print("✅ Gemini 2.5-flash API 클라이언트 생성 성공")
               
-              # 간단한 테스트 요청
-              print("🧪 간단한 API 테스트 수행...")
-              config = types.GenerateContentConfig(
-                  temperature=0.1,
-                  max_output_tokens=100
-              )
+#               # 간단한 테스트 요청
+#               print("🧪 간단한 API 테스트 수행...")
+#               config = types.GenerateContentConfig(
+#                   temperature=0.1,
+#                   max_output_tokens=100
+#               )
               
-              response = client.models.generate_content(
-                  model="gemini-2.5-flash",
-                  contents="Hello, can you respond with just 'API_TEST_SUCCESS'?",
-                  config=config
-              )
+#               response = client.models.generate_content(
+#                   model="gemini-2.5-flash",
+#                   contents="Hello, can you respond with just 'API_TEST_SUCCESS'?",
+#                   config=config
+#               )
               
-              if hasattr(response, "text") and "API_TEST_SUCCESS" in response.text:
-                  print("✅ Gemini 2.5-flash API 테스트 완료")
-                  sys.exit(0)
-              else:
-                  text = response.text if hasattr(response, "text") else "No text"
-                  print(f"⚠️ API 응답 확인: {text}")
-                  print("✅ API 연결은 성공했으나 응답 형식이 예상과 다름")
-                  sys.exit(0)
+#               if hasattr(response, "text") and "API_TEST_SUCCESS" in response.text:
+#                   print("✅ Gemini 2.5-flash API 테스트 완료")
+#                   sys.exit(0)
+#               else:
+#                   text = response.text if hasattr(response, "text") else "No text"
+#                   print(f"⚠️ API 응답 확인: {text}")
+#                   print("✅ API 연결은 성공했으나 응답 형식이 예상과 다름")
+#                   sys.exit(0)
                   
-          except ImportError as e:
-              print(f"❌ google-genai 라이브러리 import 실패: {e}")
-              print("다음 명령어로 설치하세요: pip install google-genai")
-              sys.exit(1)
-          except Exception as e:
-              print(f"❌ Gemini 2.5-flash API 연결 실패: {e}")
-              print("API 키 또는 네트워크 연결을 확인하세요.")
-              sys.exit(1)
-          EOF
+#           except ImportError as e:
+#               print(f"❌ google-genai 라이브러리 import 실패: {e}")
+#               print("다음 명령어로 설치하세요: pip install google-genai")
+#               sys.exit(1)
+#           except Exception as e:
+#               print(f"❌ Gemini 2.5-flash API 연결 실패: {e}")
+#               print("API 키 또는 네트워크 연결을 확인하세요.")
+#               sys.exit(1)
+#           EOF
               
-          # Python 파일 실행
-          python test_gemini_api.py
+#           # Python 파일 실행
+#           python test_gemini_api.py
 
-          # 네트워크 연결 테스트
-          echo "📡 네트워크 연결 테스트..."
-          curl -I https://generativelanguage.googleapis.com/ --max-time 10 || echo "⚠️ Gemini API 엔드포인트 직접 접근 제한됨"
-          curl -I https://solved.ac/ --max-time 10 || echo "⚠️ solved.ac 접근 제한됨"
+#           # 네트워크 연결 테스트
+#           echo "📡 네트워크 연결 테스트..."
+#           curl -I https://generativelanguage.googleapis.com/ --max-time 10 || echo "⚠️ Gemini API 엔드포인트 직접 접근 제한됨"
+#           curl -I https://solved.ac/ --max-time 10 || echo "⚠️ solved.ac 접근 제한됨"
 
-      # 6. PR에서 변경된 파일들 및 문제 정보 추출
-      - name: Extract changed files and problem info
-        id: extract-info
-        run: |
-          echo "🔍 PR에서 변경된 파일들 분석 중..."
-          python scripts/extract_pr_info.py
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#       # 6. PR에서 변경된 파일들 및 문제 정보 추출
+#       - name: Extract changed files and problem info
+#         id: extract-info
+#         run: |
+#           echo "🔍 PR에서 변경된 파일들 분석 중..."
+#           python scripts/extract_pr_info.py
+#         env:
+#           PR_NUMBER: ${{ github.event.pull_request.number }}
+#           GITHUB_REPOSITORY: ${{ github.repository }}
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 7. 파일 구조 및 유효성 확인
-      - name: Check valid problems
-        id: check-validity
-        run: |
-          HAS_VALID_PROBLEMS="${{ steps.extract-info.outputs.has_valid_problems }}"
-          TOTAL_PROBLEMS="${{ steps.extract-info.outputs.total_problems_count }}"
+#       # 7. 파일 구조 및 유효성 확인
+#       - name: Check valid problems
+#         id: check-validity
+#         run: |
+#           HAS_VALID_PROBLEMS="${{ steps.extract-info.outputs.has_valid_problems }}"
+#           TOTAL_PROBLEMS="${{ steps.extract-info.outputs.total_problems_count }}"
 
-          if [ "$HAS_VALID_PROBLEMS" = "false" ] || [ "$TOTAL_PROBLEMS" = "0" ]; then
-            echo "skip_tests=true" >> $GITHUB_OUTPUT
-            echo "⚠️ 분석할 수 있는 유효한 문제가 없습니다."
-          else
-            echo "skip_tests=false" >> $GITHUB_OUTPUT
-            echo "✅ $TOTAL_PROBLEMS개의 유효한 문제를 발견했습니다."
-          fi
+#           if [ "$HAS_VALID_PROBLEMS" = "false" ] || [ "$TOTAL_PROBLEMS" = "0" ]; then
+#             echo "skip_tests=true" >> $GITHUB_OUTPUT
+#             echo "⚠️ 분석할 수 있는 유효한 문제가 없습니다."
+#           else
+#             echo "skip_tests=false" >> $GITHUB_OUTPUT
+#             echo "✅ $TOTAL_PROBLEMS개의 유효한 문제를 발견했습니다."
+#           fi
 
-      # 8. 다중 문제 테스트 실행
-      - name: Run multi-problem tests
-        if: steps.check-validity.outputs.skip_tests == 'false'
-        id: run-tests
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          echo "🚀 다중 문제 테스트 시작..."
-          python scripts/multi_test_runner.py
-        continue-on-error: true
+#       # 8. 다중 문제 테스트 실행
+#       - name: Run multi-problem tests
+#         if: steps.check-validity.outputs.skip_tests == 'false'
+#         id: run-tests
+#         env:
+#           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+#         run: |
+#           echo "🚀 다중 문제 테스트 시작..."
+#           python scripts/multi_test_runner.py
+#         continue-on-error: true
 
-      # 9. 테스트 결과 분석
-      - name: Analyze test results
-        if: steps.check-validity.outputs.skip_tests == 'false'
-        id: analyze-results
-        run: |
-          if [ -f "test_results_summary.json" ]; then
-            echo "📊 테스트 결과 분석 중..."
+#       # 9. 테스트 결과 분석
+#       - name: Analyze test results
+#         if: steps.check-validity.outputs.skip_tests == 'false'
+#         id: analyze-results
+#         run: |
+#           if [ -f "test_results_summary.json" ]; then
+#             echo "📊 테스트 결과 분석 중..."
             
-            # Python으로 결과 분석
-            python scripts/analyze_test_results.py
-          else
-            echo "❌ 테스트 결과 파일을 찾을 수 없습니다."
-            echo "overall_result=FAIL" >> $GITHUB_OUTPUT
-            echo "total_problems=0" >> $GITHUB_OUTPUT
-          fi
+#             # Python으로 결과 분석
+#             python scripts/analyze_test_results.py
+#           else
+#             echo "❌ 테스트 결과 파일을 찾을 수 없습니다."
+#             echo "overall_result=FAIL" >> $GITHUB_OUTPUT
+#             echo "total_problems=0" >> $GITHUB_OUTPUT
+#           fi
 
-      # 10. README.md 업데이트 (성공한 문제들만)
-      - name: Update README for successful problems
-        if: steps.analyze-results.outputs.overall_result == 'PASS'
-        run: |
-          if [ -f "test_results_summary.json" ]; then
-            echo "📊 테스트 결과 분석 중..."
-            python scripts/update_readme_batch.py
-          fi
+#       # 10. README.md 업데이트 (성공한 문제들만)
+#       - name: Update README for successful problems
+#         if: steps.analyze-results.outputs.overall_result == 'PASS'
+#         run: |
+#           if [ -f "test_results_summary.json" ]; then
+#             echo "📊 테스트 결과 분석 중..."
+#             python scripts/update_readme_batch.py
+#           fi
 
-      # 11. 테스트 완료 확인
-      - name: Verify test completion
-        if: steps.check-validity.outputs.skip_tests == 'false'
-        run: |
-          echo "📊 테스트 완료 확인..."
+#       # 11. 테스트 완료 확인
+#       - name: Verify test completion
+#         if: steps.check-validity.outputs.skip_tests == 'false'
+#         run: |
+#           echo "📊 테스트 완료 확인..."
 
-          if [ -f "test_results_summary.json" ]; then
-            echo "✅ 테스트 결과 파일 존재"
-            echo "📄 결과 요약:"
-            cat test_results_summary.json | python -m json.tool | head -20
-          else
-            echo "❌ 테스트 결과 파일 없음"
-          fi
+#           if [ -f "test_results_summary.json" ]; then
+#             echo "✅ 테스트 결과 파일 존재"
+#             echo "📄 결과 요약:"
+#             cat test_results_summary.json | python -m json.tool | head -20
+#           else
+#             echo "❌ 테스트 결과 파일 없음"
+#           fi
 
-      # 14. README.md 변경사항을 PR 브랜치에 커밋 및 푸시
-      - name: Commit and Push README changes
-        if: steps.analyze-results.outputs.overall_result == 'PASS'
-        run: |
-          git config --local user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
-          git config --local user.name "${{ github.event.pull_request.user.login }}"
-          git add README.md
-          if ! git diff --cached --quiet; then
-            SUCCESS_COUNT="${{ steps.analyze-results.outputs.passed_problems }}"
-            PARTIAL_COUNT="${{ steps.analyze-results.outputs.partial_passed_problems }}"
-            TOTAL_COUNT="${{ steps.analyze-results.outputs.total_problems }}"
+#       # 14. README.md 변경사항을 PR 브랜치에 커밋 및 푸시
+#       - name: Commit and Push README changes
+#         if: steps.analyze-results.outputs.overall_result == 'PASS'
+#         run: |
+#           git config --local user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
+#           git config --local user.name "${{ github.event.pull_request.user.login }}"
+#           git add README.md
+#           if ! git diff --cached --quiet; then
+#             SUCCESS_COUNT="${{ steps.analyze-results.outputs.passed_problems }}"
+#             PARTIAL_COUNT="${{ steps.analyze-results.outputs.partial_passed_problems }}"
+#             TOTAL_COUNT="${{ steps.analyze-results.outputs.total_problems }}"
             
-            git commit -m "📊 Update progress: ${SUCCESS_COUNT}+${PARTIAL_COUNT}/${TOTAL_COUNT} problems solved by ${{ steps.extract-info.outputs.author }}"
-            git push origin ${{ github.event.pull_request.head.ref }}
-          else
-            echo "README.md에 변경사항이 없어 커밋하지 않습니다."
-          fi
+#             git commit -m "📊 Update progress: ${SUCCESS_COUNT}+${PARTIAL_COUNT}/${TOTAL_COUNT} problems solved by ${{ steps.extract-info.outputs.author }}"
+#             git push origin ${{ github.event.pull_request.head.ref }}
+#           else
+#             echo "README.md에 변경사항이 없어 커밋하지 않습니다."
+#           fi
 
-      # 15. 상세한 성공 알림 전송
-      - name: Send detailed success notification
-        if: steps.analyze-results.outputs.overall_result == 'PASS'
-        env:
-          PERSONAL_WEBHOOK_URL: ${{ secrets[format('{0}_MATTERMOST_URL', github.event.pull_request.user.login)] }}
-        run: |
-          echo "📢 성공 알림 전송 중..."
+#       # 15. 상세한 성공 알림 전송
+#       - name: Send detailed success notification
+#         if: steps.analyze-results.outputs.overall_result == 'PASS'
+#         env:
+#           PERSONAL_WEBHOOK_URL: ${{ secrets[format('{0}_MATTERMOST_URL', github.event.pull_request.user.login)] }}
+#         run: |
+#           echo "📢 성공 알림 전송 중..."
 
-          # 환경변수 확인 (디버깅용)
-          echo "사용자: ${{ github.event.pull_request.user.login }}"
-          if [ -n "$PERSONAL_WEBHOOK_URL" ]; then
-            echo "✅ 개인 웹훅 URL 발견"
-          else
-            echo "⚠️ 개인 웹훅 URL 없음, 기본 채널 사용"
-          fi
+#           # 환경변수 확인 (디버깅용)
+#           echo "사용자: ${{ github.event.pull_request.user.login }}"
+#           if [ -n "$PERSONAL_WEBHOOK_URL" ]; then
+#             echo "✅ 개인 웹훅 URL 발견"
+#           else
+#             echo "⚠️ 개인 웹훅 URL 없음, 기본 채널 사용"
+#           fi
 
-          python scripts/send_success_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}" "$PERSONAL_WEBHOOK_URL"
+#           python scripts/send_success_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}" "$PERSONAL_WEBHOOK_URL"
 
-      # 16. 상세한 실패 알림 전송
-      - name: Send detailed failure notification
-        if: steps.analyze-results.outputs.overall_result == 'FAIL'
-        env:
-          PERSONAL_WEBHOOK_URL: ${{ secrets[format('{0}_MATTERMOST_URL', github.event.pull_request.user.login)] }}
-        run: |
-          echo "📢 실패 알림 전송 중..."
+#       # 16. 상세한 실패 알림 전송
+#       - name: Send detailed failure notification
+#         if: steps.analyze-results.outputs.overall_result == 'FAIL'
+#         env:
+#           PERSONAL_WEBHOOK_URL: ${{ secrets[format('{0}_MATTERMOST_URL', github.event.pull_request.user.login)] }}
+#         run: |
+#           echo "📢 실패 알림 전송 중..."
 
-          # 환경변수 확인 (디버깅용)
-          echo "사용자: ${{ github.event.pull_request.user.login }}"
-          if [ -n "$PERSONAL_WEBHOOK_URL" ]; then
-            echo "✅ 개인 웹훅 URL 발견"
-          else
-            echo "⚠️ 개인 웹훅 URL 없음, 기본 채널 사용"
-          fi
+#           # 환경변수 확인 (디버깅용)
+#           echo "사용자: ${{ github.event.pull_request.user.login }}"
+#           if [ -n "$PERSONAL_WEBHOOK_URL" ]; then
+#             echo "✅ 개인 웹훅 URL 발견"
+#           else
+#             echo "⚠️ 개인 웹훅 URL 없음, 기본 채널 사용"
+#           fi
 
-          # Python으로 상세한 실패 알림 메시지 생성
-          python scripts/send_failure_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}" "$PERSONAL_WEBHOOK_URL"
+#           # Python으로 상세한 실패 알림 메시지 생성
+#           python scripts/send_failure_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}" "$PERSONAL_WEBHOOK_URL"
 
-      # 17. PR에 상세한 테스트 결과 댓글 작성
-      - name: Comment detailed test results
-        if: always() && steps.check-validity.outputs.skip_tests == 'false'
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
+#       # 17. PR에 상세한 테스트 결과 댓글 작성
+#       - name: Comment detailed test results
+#         if: always() && steps.check-validity.outputs.skip_tests == 'false'
+#         uses: actions/github-script@v6
+#         with:
+#           github-token: ${{ secrets.GITHUB_TOKEN }}
+#           script: |
+#             const fs = require('fs');
 
-            // 테스트 결과 로드
-            let results = null;
-            try {
-              if (fs.existsSync('test_results_summary.json')) {
-                const data = fs.readFileSync('test_results_summary.json', 'utf8');
-                results = JSON.parse(data);
-              }
-            } catch (error) {
-              console.log('결과 파일 로드 실패:', error);
-            }
+#             // 테스트 결과 로드
+#             let results = null;
+#             try {
+#               if (fs.existsSync('test_results_summary.json')) {
+#                 const data = fs.readFileSync('test_results_summary.json', 'utf8');
+#                 results = JSON.parse(data);
+#               }
+#             } catch (error) {
+#               console.log('결과 파일 로드 실패:', error);
+#             }
 
-            const overall_result = "${{ steps.analyze-results.outputs.overall_result }}";
-            const total_problems = parseInt("${{ steps.analyze-results.outputs.total_problems }}") || 0;
+#             const overall_result = "${{ steps.analyze-results.outputs.overall_result }}";
+#             const total_problems = parseInt("${{ steps.analyze-results.outputs.total_problems }}") || 0;
 
-            if (!results || total_problems === 0) {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `## ❌ 테스트 실행 실패
+#             if (!results || total_problems === 0) {
+#               await github.rest.issues.createComment({
+#                 issue_number: context.issue.number,
+#                 owner: context.repo.owner,
+#                 repo: context.repo.repo,
+#                 body: `## ❌ 테스트 실행 실패
                 
-            테스트 결과를 가져올 수 없습니다. 로그를 확인해주세요.`
-              });
-              return;
-            }
+#             테스트 결과를 가져올 수 없습니다. 로그를 확인해주세요.`
+#               });
+#               return;
+#             }
 
-            // 결과 요약
-            const passed = results.passed_problems || 0;
-            const partial = results.partial_passed_problems || 0;
-            const failed = results.failed_problems || 0;
-            const successRate = Math.round((passed + partial) / Math.max(total_problems, 1) * 100 * 10) / 10;
+#             // 결과 요약
+#             const passed = results.passed_problems || 0;
+#             const partial = results.partial_passed_problems || 0;
+#             const failed = results.failed_problems || 0;
+#             const successRate = Math.round((passed + partial) / Math.max(total_problems, 1) * 100 * 10) / 10;
 
-            let body = `## 📊 다중 문제 테스트 결과
+#             let body = `## 📊 다중 문제 테스트 결과
 
-            **전체 결과**: ${overall_result === 'PASS' ? '✅ 성공' : '❌ 실패'} (성공률: ${successRate}%)
+#             **전체 결과**: ${overall_result === 'PASS' ? '✅ 성공' : '❌ 실패'} (성공률: ${successRate}%)
 
-            | 구분 | 완전 성공 | 부분 성공 | 실패 | 전체 |
-            |------|-----------|-----------|------|------|
-            | 개수 | ${passed}개 | ${partial}개 | ${failed}개 | ${total_problems}개 |
+#             | 구분 | 완전 성공 | 부분 성공 | 실패 | 전체 |
+#             |------|-----------|-----------|------|------|
+#             | 개수 | ${passed}개 | ${partial}개 | ${failed}개 | ${total_problems}개 |
 
-            `;
+#             `;
 
-            // 각 문제별 상세 결과
-            if (results.details && results.details.length > 0) {
-              body += `### 📝 문제별 상세 결과\n\n`;
+#             // 각 문제별 상세 결과
+#             if (results.details && results.details.length > 0) {
+#               body += `### 📝 문제별 상세 결과\n\n`;
               
-              for (const detail of results.details) {
-                const statusEmoji = {
-                  'PASS': '✅',
-                  'PARTIAL_PASS': '⚠️',
-                  'FAIL': '❌',
-                  'ERROR': '💥'
-                }[detail.result] || '❓';
+#               for (const detail of results.details) {
+#                 const statusEmoji = {
+#                   'PASS': '✅',
+#                   'PARTIAL_PASS': '⚠️',
+#                   'FAIL': '❌',
+#                   'ERROR': '💥'
+#                 }[detail.result] || '❓';
                 
-                body += `#### ${statusEmoji} 문제 ${detail.problem_id} (${detail.author})\n`;
-                body += `- **결과**: ${detail.result}\n`;
-                body += `- **검색**: ${detail.search_success ? '성공' : '실패'}\n`;
+#                 body += `#### ${statusEmoji} 문제 ${detail.problem_id} (${detail.author})\n`;
+#                 body += `- **결과**: ${detail.result}\n`;
+#                 body += `- **검색**: ${detail.search_success ? '성공' : '실패'}\n`;
                 
-                if (detail.sample_tests && detail.sample_tests.total > 0) {
-                  const st = detail.sample_tests;
-                  body += `- **샘플 테스트**: ${st.passed}/${st.total} 통과\n`;
-                }
+#                 if (detail.sample_tests && detail.sample_tests.total > 0) {
+#                   const st = detail.sample_tests;
+#                   body += `- **샘플 테스트**: ${st.passed}/${st.total} 통과\n`;
+#                 }
                 
-                if (detail.generated_tests && detail.generated_tests.total > 0) {
-                  const gt = detail.generated_tests;
-                  body += `- **생성 테스트**: ${gt.passed}/${gt.total} 통과\n`;
-                }
+#                 if (detail.generated_tests && detail.generated_tests.total > 0) {
+#                   const gt = detail.generated_tests;
+#                   body += `- **생성 테스트**: ${gt.passed}/${gt.total} 통과\n`;
+#                 }
                 
-                if (detail.errors && detail.errors.length > 0) {
-                  body += `- **오류**: ${detail.errors[0]}\n`;
-                }
+#                 if (detail.errors && detail.errors.length > 0) {
+#                   body += `- **오류**: ${detail.errors[0]}\n`;
+#                 }
                 
-                body += `\n`;
-              }
-            }
+#                 body += `\n`;
+#               }
+#             }
 
-            // 결론
-            if (overall_result === 'PASS') {
-              body += `### 🎉 테스트 통과!
+#             // 결론
+#             if (overall_result === 'PASS') {
+#               body += `### 🎉 테스트 통과!
               
-            한 문제 이상이 성공했으므로 **PR이 승인됩니다**.
-            실패한 문제들은 BOJ 사이트에서 직접 확인 후 수정해주세요.
+#             한 문제 이상이 성공했으므로 **PR이 승인됩니다**.
+#             실패한 문제들은 BOJ 사이트에서 직접 확인 후 수정해주세요.
 
-            브랜치를 병합하고 삭제해주세요! 🚀`;
-            } else {
-              body += `### ❌ 테스트 실패
+#             브랜치를 병합하고 삭제해주세요! 🚀`;
+#             } else {
+#               body += `### ❌ 테스트 실패
               
-            모든 문제가 실패했습니다. 코드를 수정한 후 다시 푸시해주세요.
+#             모든 문제가 실패했습니다. 코드를 수정한 후 다시 푸시해주세요.
 
-            💡 **팁**: 각 문제별 오류 메시지를 확인하여 수정해보세요.`;
-            }
+#             💡 **팁**: 각 문제별 오류 메시지를 확인하여 수정해보세요.`;
+#             }
 
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
+#             await github.rest.issues.createComment({
+#               issue_number: context.issue.number,
+#               owner: context.repo.owner,
+#               repo: context.repo.repo,
+#               body: body
+#             });
 
-      # 18. 테스트 결과 업로드 (디버그용)
-      - name: Upload test results
-        if: always() && steps.check-validity.outputs.skip_tests == 'false'
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-${{ github.event.pull_request.number }}
-          path: |
-            test_results_summary.json
-            problems_info.json
-            problem_*_info.json
-            tests_*.json
-            sample_*_tests.json
-          retention-days: 7
+#       # 18. 테스트 결과 업로드 (디버그용)
+#       - name: Upload test results
+#         if: always() && steps.check-validity.outputs.skip_tests == 'false'
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: test-results-${{ github.event.pull_request.number }}
+#           path: |
+#             test_results_summary.json
+#             problems_info.json
+#             problem_*_info.json
+#             tests_*.json
+#             sample_*_tests.json
+#           retention-days: 7
