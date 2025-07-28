@@ -1,5 +1,5 @@
-import java.util.*;
 import java.io.*;
+import java.util.*;
 
 public class Main {
     public static void main(String args[]) throws IOException {
@@ -18,7 +18,5 @@ public class Main {
         sb.append(sum);
 
         System.out.println(sb);
-
-        return ;
     }
 }
