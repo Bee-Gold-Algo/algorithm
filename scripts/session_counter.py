@@ -112,7 +112,7 @@ def get_week_info_for_date(date_str):
 
     # 해당 날짜가 속한 주의 일요일 찾기
     days_until_sunday = (6 - target_date.weekday()) % 7  # 월=0, 일=6
-    if days_until_sunday == 0 and target_date.weekday() == 6:  # 해당 날짜가 일요일
+    if days_until_sunday == 0 and target_date.weekday() == 6:  # 해당 날짜가 일
         current_sunday = target_date
     else:
         current_sunday = target_date + timedelta(days=days_until_sunday)
