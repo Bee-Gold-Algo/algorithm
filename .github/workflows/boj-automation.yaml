@@ -69,13 +69,11 @@ jobs:
         continue-on-error: true
 
       - name: Run PR Logic - Analyze Results
-        # [수정] 테스트가 실패해도 결과 분석을 실행하도록 조건 변경
         if: github.event_name == 'pull_request' && steps.pr-test.outcome != 'skipped'
         id: analyze-results
         run: python scripts/analyze_test_results.py
 
       - name: Run PR Logic - Update README & Post Comment
-        # 이 단계는 분석이 성공적으로 완료되었을 때만 실행 (기존 로직 유지)
         if: github.event_name == 'pull_request' && steps.analyze-results.outcome == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -83,12 +81,11 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const exec = require('@actions/exec');
+            // [수정] 'exec'는 github-script에서 기본 제공되므로 중복 선언을 제거했습니다.
             const results = JSON.parse(fs.readFileSync('test_results_summary.json', 'utf8'));
             const { overall_success, passed_problems, partial_passed_problems, failed_problems, total_problems } = results;
 
             if (overall_success) {
-              // [수정] 중복 선언된 'exec' 제거
               await exec.exec('python', ['scripts/update_readme_batch.py']);
               const gitStatus = await exec.getExecOutput('git', ['status', '--porcelain']);
               if (gitStatus.stdout.includes('README.md')) {
@@ -117,13 +114,10 @@ jobs:
             });
 
       - name: Send Mattermost DM Notification
-        # [수정] 테스트 결과와 상관없이 항상 알림을 보내도록 조건 변경
         if: github.event_name == 'pull_request' && always() && steps.analyze-results.outcome != 'skipped'
         env:
-          # PR 작성자의 개인 Webhook URL을 동적으로 가져옵니다.
           PERSONAL_WEBHOOK_URL: ${{ secrets[format('{0}_MATTERMOST_URL', github.event.pull_request.user.login)] }}
         run: |
-          # 테스트 결과(성공/실패)에 따라 다른 스크립트를 실행합니다.
           if [ "${{ steps.analyze-results.outputs.overall_result }}" = "PASS" ]; then
             echo "✅ 테스트 성공! 성공 알림을 전송합니다."
             python scripts/send_success_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}" "$PERSONAL_WEBHOOK_URL"
