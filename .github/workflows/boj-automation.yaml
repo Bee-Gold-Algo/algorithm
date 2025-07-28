@@ -88,6 +88,7 @@ jobs:
             const { overall_success, passed_problems, partial_passed_problems, failed_problems, total_problems } = results;
 
             if (overall_success) {
+              // [수정] 중복 선언된 'exec' 제거
               await exec.exec('python', ['scripts/update_readme_batch.py']);
               const gitStatus = await exec.getExecOutput('git', ['status', '--porcelain']);
               if (gitStatus.stdout.includes('README.md')) {
