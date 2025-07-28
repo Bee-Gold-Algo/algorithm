@@ -59,7 +59,7 @@ MATTERMOST_WEBHOOK_URL=your_default_channel_webhook  # 기본 채널용
 ```
 
 #### 4. PR 제출 과정
-1. **브랜치 생성**: `git checkout -b week-N-solutions`  
+1. **브랜치 생성**: `git checkout -b week-N-<githubId>`  
 2. **코드 작성**: 위 구조대로 파일 배치
 3. **PR 생성**: main 브랜치로 Pull Request
 4. **자동 테스트**: GitHub Actions에서 자동 실행
@@ -70,7 +70,7 @@ MATTERMOST_WEBHOOK_URL=your_default_channel_webhook  # 기본 채널용
 - **완전 성공**: 샘플 + 생성 테스트 모두 통과
 - **부분 성공**: 샘플 또는 생성 테스트 중 하나만 통과  
 - **실패**: 모든 테스트 실패
-- **PR 승인**: 한 문제 이상 성공 시 자동 승인
+- **PR 승인**: 문제 정답 여부와 상관없이 모두 승인
 
 ### 🚨 주의사항
 - Java 11 환경에서 테스트됩니다

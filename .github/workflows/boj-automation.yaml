@@ -73,39 +73,42 @@ jobs:
         id: analyze-results
         run: python scripts/analyze_test_results.py
 
-      - name: Run PR Logic - Update README & Post Comment
+      # [수정] README 업데이트 및 커밋 단계를 분리하고, 테스트 결과와 상관없이 항상 실행
+      - name: Run PR Logic - Update README and Commit
+        if: github.event_name == 'pull_request' && steps.pr-test.outcome != 'skipped'
+        run: |
+          echo "📝 PR에 제출된 모든 문제에 대해 README 업데이트를 시도합니다."
+          python scripts/update_readme_batch.py
+
+          if ! git diff --quiet README.md; then
+            echo "README.md 변경사항을 커밋합니다."
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action Bot"
+            git add README.md
+            git commit -m "docs: PR #${{ github.event.pull_request.number }} 제출 현황 반영"
+            git push origin ${{ github.event.pull_request.head.ref }}
+          else
+            echo "README.md에 변경사항이 없어 커밋하지 않습니다."
+          fi
+
+      - name: Run PR Logic - Post Comment on PR
         if: github.event_name == 'pull_request' && steps.analyze-results.outcome == 'success'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            // [수정] 'exec'는 github-script에서 기본 제공되므로 중복 선언을 제거했습니다.
             const results = JSON.parse(fs.readFileSync('test_results_summary.json', 'utf8'));
             const { overall_success, passed_problems, partial_passed_problems, failed_problems, total_problems } = results;
-
-            if (overall_success) {
-              await exec.exec('python', ['scripts/update_readme_batch.py']);
-              const gitStatus = await exec.getExecOutput('git', ['status', '--porcelain']);
-              if (gitStatus.stdout.includes('README.md')) {
-                await exec.exec('git', ['config', 'user.name', 'GitHub Action Bot']);
-                await exec.exec('git', ['config', 'user.email', 'action@github.com']);
-                await exec.exec('git', ['add', 'README.md']);
-                await exec.exec('git', ['commit', '-m', 'docs: PR #${{ github.event.pull_request.number }} 제출 현황 반영']);
-                await exec.exec('git', ['push']);
-              }
-            }
             
             let commentBody = `## 📊 테스트 결과 요약\n\n`;
             commentBody += `| 전체 | ✅ 성공 | ⚠️ 부분 성공 | ❌ 실패 |\n`;
             commentBody += `|:---:|:---:|:---:|:---:|\n`;
             commentBody += `| ${total_problems}개 | ${passed_problems}개 | ${partial_passed_problems}개 | ${failed_problems}개 |\n\n`;
-            if (overall_success) {
-              commentBody += `\n---\n🎉 **테스트 통과!** PR을 병합할 수 있습니다.`;
-            } else {
-              commentBody += `\n---\n❌ **테스트 실패.** 코드를 수정한 후 다시 푸시해주세요.`;
-            }
+            
+            // [수정] PR 승인 메시지를 항상 표시하도록 변경
+            commentBody += `\n---\n🎉 **PR 제출이 확인되었습니다!** 테스트 결과와 상관없이 제출 현황이 README에 반영됩니다.`;
+
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
