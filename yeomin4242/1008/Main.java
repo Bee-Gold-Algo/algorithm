@@ -12,7 +12,5 @@ public class Main {
         double sum = x / y;
 
         System.out.printf("%.9f",sum);
-
-        return ;
     }
 }
