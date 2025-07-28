@@ -1,0 +1,351 @@
+name: Weekly Study Update (Debug Mode - Scripts)
+on:
+  schedule:
+    # 디버그용: 매 5분마다 실행 (GitHub Actions 최소 간격)
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      force_reset:
+        description: '강제 리셋 (새 주차가 아니어도 실행)'
+        required: false
+        default: true  # 디버그용으로 기본값 true
+        type: boolean
+      notification:
+        description: '알림 전송 여부'
+        required: false
+        default: false  # 디버그용으로 기본값 false (알림 스팸 방지)
+        type: boolean
+      debug_mode:
+        description: '디버그 모드 (상세 로그 출력)'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  TZ: Asia/Seoul
+  DEBUG_MODE: true  # 디버그 모드 활성화
+  FORCE_RESET: true # 디버그용으로 항상 강제 리셋
+
+jobs:
+  debug-weekly-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug Info
+        run: |
+          echo "🐛 DEBUG MODE: 매 5분마다 실행되는 테스트 워크플로우 (Scripts 버전)"
+          echo "⏰ 실행 시간: $(date '+%Y-%m-%d %H:%M:%S KST')"
+          echo "🔧 트리거: ${{ github.event_name }}"
+          echo "👤 실행자: ${{ github.actor }}"
+          
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+          
+      - name: Install dependencies
+        run: |
+          pip install requests pytz
+          echo "📦 의존성 설치 완료"
+          
+      - name: Debug - Check files structure
+        run: |
+          echo "📁 파일 구조 확인:"
+          echo "=== Root Directory ==="
+          ls -la
+          echo ""
+          echo "=== Scripts Directory ==="
+          if [ -d "scripts" ]; then
+            ls -la scripts/
+          else
+            echo "❌ scripts 디렉토리 없음"
+          fi
+          echo ""
+          echo "=== Python Scripts Check ==="
+          for script in scripts/check_session.py scripts/send_notification.py scripts/create_debug_readme.py; do
+            if [ -f "$script" ]; then
+              echo "✅ $script 존재"
+            else
+              echo "❌ $script 없음"
+            fi
+          done
+          
+      - name: Check current session info using script
+        id: session_check
+        run: |
+          echo "🔍 회차 정보 확인 중 (스크립트 사용)..."
+          
+          # check_session.py가 있는지 확인하고 실행
+          if [ -f "scripts/check_session.py" ]; then
+            echo "📝 scripts/check_session.py 실행 중..."
+            
+            # 스크립트 실행하고 결과를 환경변수로 저장
+            cd scripts
+            RESULT=$(python check_session.py 2>&1)
+            cd ..
+            
+            echo "📋 스크립트 실행 결과:"
+            echo "$RESULT"
+            
+            # 결과를 환경변수로 설정
+            echo "$RESULT" | grep "=" >> $GITHUB_ENV
+            
+            echo "✅ check_session.py 실행 완료"
+          else
+            echo "❌ scripts/check_session.py 없음 - 폴백 모드"
+            
+            # 폴백: 기본값 설정
+            TODAY=$(date '+%Y-%m-%d')
+            WEEK_END=$(date -d '+6 days' '+%Y-%m-%d')
+            
+            echo "IS_NEW_WEEK=true" >> $GITHUB_ENV
+            echo "SESSION_NUMBER=999" >> $GITHUB_ENV
+            echo "TODAY=$TODAY" >> $GITHUB_ENV
+            echo "WEEK_START=$TODAY" >> $GITHUB_ENV
+            echo "WEEK_END=$WEEK_END" >> $GITHUB_ENV
+            echo "DEADLINE=$WEEK_END 23:59" >> $GITHUB_ENV
+            echo "HAS_SESSION_COUNTER=false" >> $GITHUB_ENV
+            echo "TOTAL_WEEKS=0" >> $GITHUB_ENV
+            echo "TOTAL_DAYS=0" >> $GITHUB_ENV
+            echo "STUDY_START=$TODAY" >> $GITHUB_ENV
+          fi
+          
+      - name: Debug - Show environment variables
+        if: github.event.inputs.debug_mode == 'true' || env.DEBUG_MODE == 'true'
+        run: |
+          echo "🐛 환경 변수 확인:"
+          echo "  IS_NEW_WEEK: $IS_NEW_WEEK"
+          echo "  FORCE_RESET: $FORCE_RESET"
+          echo "  SESSION_NUMBER: $SESSION_NUMBER"
+          echo "  TODAY: $TODAY"
+          echo "  WEEK_START: $WEEK_START"
+          echo "  WEEK_END: $WEEK_END"
+          echo "  DEADLINE: $DEADLINE"
+          echo "  HAS_SESSION_COUNTER: $HAS_SESSION_COUNTER"
+          echo "  TOTAL_WEEKS: $TOTAL_WEEKS"
+          echo "  TOTAL_DAYS: $TOTAL_DAYS"
+          
+      - name: Create README backup
+        run: |
+          if [ -f "README.md" ]; then
+            BACKUP_NAME="README_debug_backup_$(date +%Y%m%d_%H%M%S).md"
+            cp README.md "$BACKUP_NAME"
+            echo "📁 디버그 백업 생성: $BACKUP_NAME"
+            echo "BACKUP_FILE=$BACKUP_NAME" >> $GITHUB_ENV
+          else
+            echo "ℹ️ 기존 README.md 없음"
+          fi
+          
+      - name: Generate README using script
+        run: |
+          echo "🔄 README 생성 중 (스크립트 사용)..."
+          
+          if [ -f "scripts/create_debug_readme.py" ]; then
+            echo "📝 scripts/create_debug_readme.py 실행 중..."
+            
+            cd scripts
+            if [ "$DEBUG_MODE" = "true" ]; then
+              python create_debug_readme.py --debug-mode --try-advanced
+            else
+              python create_debug_readme.py --try-advanced
+            fi
+            cd ..
+            
+            if [ $? -eq 0 ]; then
+              echo "✅ 스크립트를 통한 README 생성 성공"
+              echo "UPDATE_SUCCESS=true" >> $GITHUB_ENV
+            else
+              echo "❌ 스크립트를 통한 README 생성 실패"
+              echo "UPDATE_SUCCESS=false" >> $GITHUB_ENV
+            fi
+          else
+            echo "❌ scripts/create_debug_readme.py 없음 - 간단 README 생성"
+            
+            # 폴백: 간단한 README 생성 (HERE document 대신 echo 사용)
+            echo "# 🚀 알고리즘 스터디 (Debug Mode - Fallback)" > README.md
+            echo "" >> README.md
+            echo "## 📅 ${SESSION_NUMBER}회차 현황" >> README.md
+            echo "**기간**: ${WEEK_START} ~ ${WEEK_END}" >> README.md
+            echo "**마감**: ${DEADLINE}" >> README.md
+            echo "" >> README.md
+            echo "### ⚠️ 폴백 모드로 실행됨" >> README.md
+            echo "" >> README.md
+            echo "scripts/create_debug_readme.py 파일이 없어서 기본 README를 생성했습니다." >> README.md
+            echo "" >> README.md
+            echo "### 🐛 디버그 정보" >> README.md
+            echo "- **실행 시간**: $(date '+%Y-%m-%d %H:%M:%S KST')" >> README.md
+            echo "- **회차**: ${SESSION_NUMBER}회차" >> README.md
+            echo "- **트리거**: ${{ github.event_name }}" >> README.md
+            echo "- **실행자**: ${{ github.actor }}" >> README.md
+            echo "" >> README.md
+            echo "| 참가자 | 월 | 화 | 수 | 목 | 금 | 토 | 일 |" >> README.md
+            echo "|--------|----|----|----|----|----|----|---|" >> README.md
+            echo "| fallback_user | 1000 | | | | | | |" >> README.md
+            echo "" >> README.md
+            echo "---" >> README.md
+            echo "*Auto-updated by GitHub Actions 🤖 (Fallback Mode)*" >> README.md
+            
+            echo "✅ 폴백 README 생성 완료"
+            echo "UPDATE_SUCCESS=true" >> $GITHUB_ENV
+          fi
+          
+      - name: Debug - Show generated README
+        if: github.event.inputs.debug_mode == 'true' || env.DEBUG_MODE == 'true'
+        run: |
+          echo "📄 생성된 README.md 내용 (첫 30줄):"
+          echo "================================================"
+          head -30 README.md
+          echo "================================================"
+          echo "(총 $(wc -l < README.md) 줄, $(stat -c%s README.md) bytes)"
+          
+      - name: Commit changes
+        if: env.UPDATE_SUCCESS == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action - Debug Scripts"
+          
+          # 변경된 파일들 확인
+          git add README.md
+          git add $BACKUP_FILE 2>/dev/null || true
+          git add session_info.json 2>/dev/null || true
+          
+          if git diff --staged --quiet; then
+            echo "📝 변경 사항이 없습니다."
+            echo "CHANGES_COMMITTED=false" >> $GITHUB_ENV
+          else
+            # 커밋 메시지를 변수에 저장
+            COMMIT_TIME=$(date '+%Y-%m-%d %H:%M:%S KST')
+            SCRIPT_STATUS=$([ -f "scripts/create_debug_readme.py" ] && echo "사용" || echo "폴백")
+            
+            git commit -m "🐛 DEBUG: 스크립트 기반 README 자동 업데이트
+
+            🕐 실행 시간: $COMMIT_TIME
+            🎯 회차: ${SESSION_NUMBER}회차 (DEBUG)
+            🤖 트리거: ${{ github.event_name }}
+            👤 실행자: ${{ github.actor }}
+            📝 스크립트: $SCRIPT_STATUS
+
+            ⚠️ 이것은 5분마다 실행되는 디버그 모드입니다."
+                        
+                        git push
+                        
+                        echo "✅ 디버그 변경사항 커밋 완료"
+                        echo "CHANGES_COMMITTED=true" >> $GITHUB_ENV
+                      fi
+                      
+      - name: Send notification using script
+        if: env.CHANGES_COMMITTED == 'true' && (github.event.inputs.notification == 'true' || env.FORCE_NOTIFICATION == 'true')
+        env:
+          YEOMIN4242_MATTERMOST_URL: ${{ secrets.YEOMIN4242_MATTERMOST_URL }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          echo "📢 알림 전송 중 (스크립트 사용)..."
+          
+          if [ -f "scripts/send_notification.py" ]; then
+            echo "📨 scripts/send_notification.py 실행 중..."
+            
+            cd scripts
+            if [ "$DEBUG_MODE" = "true" ]; then
+              python send_notification.py --debug-mode --force-reset
+            else
+              python send_notification.py --force-reset
+            fi
+            cd ..
+            
+            if [ $? -eq 0 ]; then
+              echo "✅ 스크립트를 통한 알림 전송 완료"
+            else
+              echo "❌ 스크립트를 통한 알림 전송 실패"
+            fi
+          else
+            echo "❌ scripts/send_notification.py 없음 - 기본 알림"
+            
+            # 폴백: 간단한 curl 알림
+            if [ -n "$YEOMIN4242_MATTERMOST_URL" ]; then
+              CURRENT_TIME=$(date '+%Y-%m-%d %H:%M:%S KST')
+              
+              # JSON 메시지 구성 (작은따옴표로 감싸서 이스케이프 문제 해결)
+              MESSAGE='🐛 **DEBUG: README 자동 업데이트 (폴백)**\n\n⏰ 시간: '"$CURRENT_TIME"'\n🎯 회차: '"${SESSION_NUMBER}"'회차\n🤖 트리거: ${{ github.event_name }}\n\n⚠️ send_notification.py 스크립트가 없어서 기본 알림을 전송했습니다.'
+              
+              curl -X POST "$YEOMIN4242_MATTERMOST_URL" \
+                -H "Content-Type: application/json" \
+                -d '{"text":"'"$MESSAGE"'"}' || echo "기본 알림 전송 실패"
+            else
+              echo "⚠️ Mattermost webhook URL이 설정되지 않음"
+            fi
+          fi
+          
+      - name: Debug summary
+        if: always()
+        run: |
+          echo "## 🐛 Debug Weekly Update 실행 결과 (Scripts)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**⚠️ 주의: 이것은 5분마다 실행되는 스크립트 기반 디버그 모드입니다**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**실행 시간**: $(date '+%Y-%m-%d %H:%M:%S KST')" >> $GITHUB_STEP_SUMMARY
+          echo "**트리거**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**실행자**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 회차 정보" >> $GITHUB_STEP_SUMMARY
+          echo "- **회차**: ${SESSION_NUMBER}회차 (DEBUG)" >> $GITHUB_STEP_SUMMARY
+          echo "- **날짜**: ${TODAY}" >> $GITHUB_STEP_SUMMARY
+          echo "- **주차**: ${WEEK_START} ~ ${WEEK_END}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Session Counter**: ${HAS_SESSION_COUNTER}" >> $GITHUB_STEP_SUMMARY
+          echo "- **완료 주차**: ${TOTAL_WEEKS}주" >> $GITHUB_STEP_SUMMARY
+          echo "- **총 진행일**: ${TOTAL_DAYS}일" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 스크립트 상태" >> $GITHUB_STEP_SUMMARY
+          
+          # 스크립트 파일들 확인
+          for script in check_session.py send_notification.py create_debug_readme.py; do
+            if [ -f "scripts/$script" ]; then
+              echo "✅ **$script**: 사용 가능" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ **$script**: 없음 (폴백 모드)" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎯 작업 결과" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$UPDATE_SUCCESS" = "true" ]; then
+            echo "✅ **README 업데이트**: 성공" >> $GITHUB_STEP_SUMMARY
+            if [ "$CHANGES_COMMITTED" = "true" ]; then
+              echo "✅ **커밋**: 완료" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "ℹ️ **커밋**: 변경사항 없음" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ **README 업데이트**: 실패" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "$BACKUP_FILE" != "" ]; then
+            echo "📁 **백업**: $BACKUP_FILE" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 스크립트 파일 생성" >> $GITHUB_STEP_SUMMARY
+          echo "다음 스크립트들을 \`scripts/\` 디렉토리에 추가하세요:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`check_session.py\`: 회차 정보 확인" >> $GITHUB_STEP_SUMMARY
+          echo "- \`create_debug_readme.py\`: README 생성" >> $GITHUB_STEP_SUMMARY
+          echo "- \`send_notification.py\`: 알림 전송" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔄 정상 모드 전환" >> $GITHUB_STEP_SUMMARY
+          echo "테스트 완료 후:" >> $GITHUB_STEP_SUMMARY
+          echo "1. cron을 \`\"0 0 * * 1\"\` (매주 월요일)로 변경" >> $GITHUB_STEP_SUMMARY
+          echo "2. \`DEBUG_MODE: false\`로 변경" >> $GITHUB_STEP_SUMMARY
+          echo "3. \`FORCE_RESET: false\`로 변경" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*🐛 스크립트 기반 디버그 모드 - 매 5분마다 실행*" >> $GITHUB_STEP_SUMMARY

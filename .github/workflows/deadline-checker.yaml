@@ -1,30 +1,142 @@
-name: Algorithm Study Deadline Checker
-
+name: Algorithm Study Deadline Checker and Weekly Reset
 on:
   schedule:
-    - cron: "0 0 * * 5" # 금요일 오전 9시 KST
-    - cron: "0 0 * * 0" # 일요일 오전 9시 KST
-    - cron: "0 12 * * 0" # 일요일 오후 9시 KST
+    # 기존 스케줄
+    - cron: "0 0 * * 5" # 금요일 오전 9시 KST (5일차 체크)
+    - cron: "0 0 * * 0" # 일요일 오전 9시 KST (마감일 알림)
+    - cron: "0 12 * * 0" # 일요일 오후 9시 KST (최종 마감)
+    
+    # 새 주차 시작 스케줄 (매주 월요일 오전 9시)
+    - cron: "0 0 * * 1" # 월요일 오전 9시 KST (새 주차 시작)
+    
   workflow_dispatch:
+    inputs:
+      action:
+        description: '실행할 작업'
+        required: true
+        default: 'check'
+        type: choice
+        options:
+        - check
+        - reset
 
 jobs:
+  # 기존 마감일 체크 작업
   check-deadline:
     runs-on: ubuntu-latest
+    if: github.event.schedule != '0 0 * * 1' && (github.event_name != 'workflow_dispatch' || github.event.inputs.action == 'check')
     steps:
       - uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.9"
-
       - name: Install dependencies
         run: |
           pip install requests pytz
-
       - name: Run deadline checker
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           YEOMIN4242_MATTERMOST_URL: ${{ secrets.YEOMIN4242_MATTERMOST_URL }}
-          # ... (다른 참가자도 추가)
+          # 다른 참가자들도 필요에 따라 추가
         run: python scripts/deadline_checker.py
+
+  # 새로운 주차 초기화 작업
+  weekly-reset:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 0 * * 1' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'reset')
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+          
+      - name: Install dependencies
+        run: |
+          pip install requests pytz
+          
+      - name: Check if new week started
+        id: check_week
+        run: |
+          python -c "
+          from datetime import datetime
+          import sys
+          import os
+          sys.path.append('.')
+          
+          try:
+              from session_counter import get_session_info
+              current_session = get_session_info()
+              today = datetime.now().strftime('%Y-%m-%d')
+              
+              # 오늘이 새로운 주차의 월요일인지 확인
+              if today == current_session['monday']:
+                  print('NEW_WEEK=true')
+                  print(f'SESSION_NUMBER={current_session[\"session_number\"]}')
+              else:
+                  print('NEW_WEEK=false')
+          except Exception as e:
+              print(f'Error: {e}')
+              print('NEW_WEEK=false')
+          " >> $GITHUB_ENV
+          
+      - name: Reset README for new week
+        if: env.NEW_WEEK == 'true'
+        run: |
+          echo "🔄 새로운 주차 시작 - README.md 초기화 중..."
+          python scripts/weekly_reset.py
+          
+      - name: Commit and push changes
+        if: env.NEW_WEEK == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git commit -m "🔄 새로운 ${SESSION_NUMBER}회차 시작 - README.md 초기화"
+          git push
+          
+      - name: Notify new week start
+        if: env.NEW_WEEK == 'true'
+        env:
+          YEOMIN4242_MATTERMOST_URL: ${{ secrets.YEOMIN4242_MATTERMOST_URL }}
+        run: |
+          python -c "
+          import requests
+          import os
+          import sys
+          sys.path.append('.')
+          
+          try:
+              from session_counter import get_session_info
+              session_info = get_session_info()
+              
+              message = f'''🚀 **새로운 {session_info['session_number']}회차가 시작되었습니다!**
+              
+              📅 **기간**: {session_info['monday']} ~ {session_info['sunday']}
+              ⏰ **마감**: {session_info['deadline']}
+              
+              💪 이번 주도 화이팅하세요!
+              '''
+              
+              webhook_url = os.environ.get('YEOMIN4242_MATTERMOST_URL')
+              if webhook_url:
+                  response = requests.post(webhook_url, json={'text': message})
+                  if response.status_code == 200:
+                      print('✅ 새 주차 시작 알림 전송 완료')
+                  else:
+                      print(f'❌ 알림 전송 실패: {response.status_code}')
+              else:
+                  print('⚠️ Mattermost webhook URL이 설정되지 않음')
+                  
+          except Exception as e:
+              print(f'❌ 알림 전송 중 오류: {e}')
+          "
+          
+      - name: Skip if not new week
+        if: env.NEW_WEEK != 'true'
+        run: |
+          echo "ℹ️ 새로운 주차가 아니므로 README 초기화를 건너뜁니다."
