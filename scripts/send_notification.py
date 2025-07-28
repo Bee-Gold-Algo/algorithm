@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 scripts/send_notification.py
-GitHub Actions에서 사용할 알림 전송 스크립트
+GitHub Actions에서 사용할 알림 전송 스크립트 (알림으로 변경된 버전)
 """
 
 import os
@@ -35,21 +35,23 @@ def send_mattermost_notification(webhook_url, message, user_name="Unknown"):
     try:
         response = requests.post(webhook_url, json={"text": message}, timeout=10)
         if response.status_code == 200:
-            print(f"✅ {user_name} 알림 전송 성공")
+            print("✅ {} 알림 전송 성공".format(user_name))
             return True
         else:
-            print(f"❌ {user_name} 알림 전송 실패: HTTP {response.status_code}")
+            print(
+                "❌ {} 알림 전송 실패: HTTP {}".format(user_name, response.status_code)
+            )
             return False
     except requests.exceptions.Timeout:
-        print(f"⏰ {user_name} 알림 전송 타임아웃")
+        print("⏰ {} 알림 전송 타임아웃".format(user_name))
         return False
     except Exception as e:
-        print(f"❌ {user_name} 알림 전송 오류: {e}")
+        print("❌ {} 알림 전송 오류: {}".format(user_name, e))
         return False
 
 
 def create_message(session_info, stats, force_reset=False, debug_mode=False):
-    """알림 메시지 생성"""
+    """알림 메시지 생성 (통知 → 알림으로 변경)"""
 
     # 헤더 결정
     if debug_mode:
@@ -59,7 +61,9 @@ def create_message(session_info, stats, force_reset=False, debug_mode=False):
         header = "🔧 **README 강제 초기화 완료!**"
         emoji = "🔧"
     else:
-        header = f"🚀 **새로운 {session_info['session_number']}회차가 시작되었습니다!**"
+        header = "🚀 **새로운 {}회차가 시작되었습니다!**".format(
+            session_info["session_number"]
+        )
         emoji = "🚀"
 
     # 트리거 정보
@@ -67,30 +71,47 @@ def create_message(session_info, stats, force_reset=False, debug_mode=False):
     actor = os.environ.get("GITHUB_ACTOR", "Unknown")
 
     if force_reset:
-        trigger_info = f"👤 실행자: {actor}"
+        trigger_info = "👤 실행자: {}".format(actor)
     else:
         trigger_info = "🤖 자동 트리거"
 
     # 특별 메시지 (디버그 모드)
     special_msg = ""
     if debug_mode:
-        special_msg = "\n⚠️ **이것은 5분마다 실행되는 디버그 테스트입니다.**"
+        special_msg = "\n⚠️ **이것은 실제 제출 현황을 반영한 디버그 테스트입니다.**"
 
     # Repository 정보
     repo = os.environ.get("GITHUB_REPOSITORY", "Unknown/Unknown")
 
-    message = f"""{header}
+    message = """{}
 
-📅 **기간**: {session_info['monday']} ~ {session_info['sunday']}
-⏰ **마감**: {session_info['deadline']}
-📊 **진행**: {stats['total_weeks_completed']}주 완료 → {session_info['session_number']}회차 시작
-📈 **총 일수**: {stats['total_study_days']}일
-{trigger_info}
-🕐 **실행 시간**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S KST')}{special_msg}
+📅 **기간**: {} ~ {}
+⏰ **마감**: {}
+📊 **진행**: {}주 완료 → {}회차 시작
+📈 **총 일수**: {}일
+{}
+🕐 **실행 시간**: {}{}
 
-{emoji} 이번 주도 열심히 문제를 풀어보세요!
-🔗 **Repository**: https://github.com/{repo}
-📝 **README**: https://github.com/{repo}#readme"""
+{} 이번 주도 열심히 문제를 풀어보세요!
+🔗 **Repository**: https://github.com/{}
+📝 **README**: https://github.com/{}#readme
+
+💡 **참고**: 제출 현황은 실제 repository의 파일을 스캔하여 반영됩니다.
+📁 **구조**: 본인깃허브아이디/문제번호/Main.java""".format(
+        header,
+        session_info["monday"],
+        session_info["sunday"],
+        session_info["deadline"],
+        stats["total_weeks_completed"],
+        session_info["session_number"],
+        stats["total_study_days"],
+        trigger_info,
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S KST"),
+        special_msg,
+        emoji,
+        repo,
+        repo,
+    )
 
     return message
 
@@ -118,7 +139,7 @@ def main():
         )
 
         if args.dry_run:
-            print("📝 생성된 메시지:")
+            print("📝 생성된 알림 메시지:")
             print("=" * 50)
             print(message)
             print("=" * 50)
@@ -145,13 +166,13 @@ def main():
         success_count = 0
         total_count = len(webhook_configs)
 
-        print(f"📢 {total_count}개 채널로 알림 전송 중...")
+        print("📢 {}개 채널로 알림 전송 중...".format(total_count))
 
         for user_name, webhook_url in webhook_configs:
             if send_mattermost_notification(webhook_url, message, user_name):
                 success_count += 1
 
-        print(f"📊 알림 전송 완료: {success_count}/{total_count} 성공")
+        print("📊 알림 전송 완료: {}/{} 성공".format(success_count, total_count))
 
         if success_count == 0:
             print("❌ 모든 알림 전송이 실패했습니다.")
@@ -162,7 +183,7 @@ def main():
             print("✅ 모든 알림이 성공적으로 전송되었습니다.")
 
     except Exception as e:
-        print(f"❌ 알림 전송 중 치명적 오류: {e}")
+        print("❌ 알림 전송 중 치명적 오류: {}".format(e))
         import traceback
 
         traceback.print_exc()

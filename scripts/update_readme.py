@@ -476,7 +476,7 @@ def create_participant_table(participants, current_week):
 
 
 def update_last_updated(readme_content):
-    """마지막 업데이트 시간 갱신 (수정된 버전)"""
+    """마지막 업데이트 시간 갱신 (수정된 버전 - 알림으로 변경)"""
     import re
 
     patterns_to_remove = [
@@ -491,6 +491,10 @@ def update_last_updated(readme_content):
     cleaned_content = readme_content
     for pattern in patterns_to_remove:
         cleaned_content = re.sub(pattern, "", cleaned_content)
+
+    # "통知"를 "알림"으로 변경
+    cleaned_content = cleaned_content.replace("통知", "알림")
+    cleaned_content = cleaned_content.replace("통지", "알림")
 
     # 끝부분 공백 정리
     cleaned_content = cleaned_content.rstrip()
