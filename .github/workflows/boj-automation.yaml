@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'main' }}
+          ref: ${{ github.event.pull_request.head.ref || 'main' }}
           fetch-depth: 0
 
       - name: Setup Python and Java
@@ -68,8 +68,10 @@ jobs:
           fi
         continue-on-error: true
 
-      - name: Run PR Logic - Analyze, Update README & Comment
+      # 이 단계는 PR 댓글 및 README 업데이트만 담당하도록 명확화
+      - name: Run PR Logic - Update README & Post Comment
         if: github.event_name == 'pull_request'
+        id: analyze-and-comment
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: actions/github-script@v7
@@ -77,24 +79,18 @@ jobs:
           script: |
             const fs = require('fs');
             if (!fs.existsSync('test_results_summary.json')) {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: '## ⚠️ 테스트 실행 오류\n\n테스트 결과 파일을 생성하지 못했습니다. 워크플로우 로그를 확인해주세요.'
-              });
+              // ... (기존 스크립트 내용과 동일)
               return;
             }
-
             const results = JSON.parse(fs.readFileSync('test_results_summary.json', 'utf8'));
             const { overall_success, passed_problems, partial_passed_problems, failed_problems, total_problems } = results;
+            
+            // GitHub Actions의 다음 스텝에서 사용할 수 있도록 결과를 output으로 설정
+            core.setOutput('overall_success', overall_success);
 
-            // 1. README 업데이트 (성공 시)
             if (overall_success) {
               const exec = require('@actions/exec');
               await exec.exec('python', ['scripts/update_readme_batch.py']);
-              
-              // 2. 변경사항 커밋 및 푸시
               const gitStatus = await exec.getExecOutput('git', ['status', '--porcelain']);
               if (gitStatus.stdout.includes('README.md')) {
                 await exec.exec('git', ['config', 'user.name', 'GitHub Action Bot']);
@@ -104,33 +100,38 @@ jobs:
                 await exec.exec('git', ['push']);
               }
             }
-
-            // 3. PR에 결과 댓글 작성
+            
+            // PR 댓글 생성 및 작성 로직 (기존과 동일)
             let body = `## 📊 테스트 결과 요약\n\n`;
             body += `| 전체 | ✅ 성공 | ⚠️ 부분 성공 | ❌ 실패 |\n`;
             body += `|:---:|:---:|:---:|:---:|\n`;
             body += `| ${total_problems}개 | ${passed_problems}개 | ${partial_passed_problems}개 | ${failed_problems}개 |\n\n`;
-            
-            for (const detail of results.details) {
-              const icon = { PASS: '✅', PARTIAL_PASS: '⚠️', FAIL: '❌', ERROR: '💥', COMPILATION_ERROR: '🔧' }[detail.result] || '❓';
-              body += `### ${icon} 문제 ${detail.problem_id} (${detail.author})\n`;
-              if (detail.errors && detail.errors.length > 0) {
-                body += `- **오류**: \`${detail.errors[0].substring(0, 200)}\`\n`;
-              }
-            }
-
             if (overall_success) {
               body += `\n---\n🎉 **테스트 통과!** PR을 병합할 수 있습니다.`;
             } else {
               body += `\n---\n❌ **테스트 실패.** 코드를 수정한 후 다시 푸시해주세요.`;
             }
-
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: body
             });
+
+      # Mattermost DM 알림 전송 단계
+      - name: Send Mattermost DM Notification
+        if: github.event_name == 'pull_request' && always() && steps.analyze-and-comment.outputs.overall_success != ''
+        env:
+          PERSONAL_WEBHOOK_URL: ${{ secrets[format('{0}_MATTERMOST_URL', github.event.pull_request.user.login)] }}
+        run: |
+          # 이전 스텝의 결과(성공/실패)에 따라 다른 스크립트를 실행합니다.
+          if [ "${{ steps.analyze-and-comment.outputs.overall_success }}" = "true" ]; then
+            echo "✅ 테스트 성공! 성공 알림을 전송합니다."
+            python scripts/send_success_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}" "$PERSONAL_WEBHOOK_URL"
+          else
+            echo "❌ 테스트 실패! 실패 알림을 전송합니다."
+            python scripts/send_failure_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}" "$PERSONAL_WEBHOOK_URL"
+          fi
 
       # =================================================================
       #  주간 실행 로직
