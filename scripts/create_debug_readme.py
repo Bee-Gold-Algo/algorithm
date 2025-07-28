@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 scripts/create_debug_readme.py
-GitHub Actions에서 사용할 디버그용 README 생성 스크립트
+GitHub Actions에서 사용할 디버그용 README 생성 스크립트 (완전 수정된 버전)
 """
 
 import os
 import sys
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -29,7 +29,7 @@ def get_session_info_from_env():
 def create_debug_readme_content(session_info, debug_mode=False):
     """디버그용 README 컨텐츠 생성"""
 
-    # 현재 시간
+    # 현재 시간 (datetime은 이미 import됨)
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S KST")
 
     # GitHub 정보
@@ -40,30 +40,42 @@ def create_debug_readme_content(session_info, debug_mode=False):
     # 디버그 정보 섹션
     debug_section = ""
     if debug_mode:
-        debug_section = f"""
+        debug_section = """
 ### 🐛 디버그 정보
-- **실행 시간**: {current_time}
-- **회차**: {session_info['session_number']}회차
-- **오늘**: {session_info['today']}
-- **주차**: {session_info['week_start']} ~ {session_info['week_end']}
-- **트리거**: {github_event}
-- **실행자**: {github_actor}
-- **Session Counter**: {'사용 가능' if session_info['has_session_counter'] else '사용 불가'}
-- **완료 주차**: {session_info['total_weeks']}주
-- **총 진행일**: {session_info['total_days']}일
+- **실행 시간**: {}
+- **회차**: {}회차
+- **오늘**: {}
+- **주차**: {} ~ {}
+- **트리거**: {}
+- **실행자**: {}
+- **Session Counter**: {}
+- **완료 주차**: {}주
+- **총 진행일**: {}일
 
-⚠️ **주의**: 이것은 5분마다 실행되는 디버그 모드입니다.
-"""
+⚠️ **주의**: 이것은 디버그 모드입니다.
+""".format(
+            current_time,
+            session_info["session_number"],
+            session_info["today"],
+            session_info["week_start"],
+            session_info["week_end"],
+            github_event,
+            github_actor,
+            "사용 가능" if session_info["has_session_counter"] else "사용 불가",
+            session_info["total_weeks"],
+            session_info["total_days"],
+        )
 
     # 주간 날짜 계산 (간단 버전)
     try:
-        from datetime import datetime, timedelta
-
-        monday = datetime.strptime(session_info["week_start"], "%Y-%m-%d")
-        week_dates = []
-        for i in range(7):
-            date = monday + timedelta(days=i)
-            week_dates.append(date.strftime("%m/%d"))
+        if session_info["week_start"] != "Unknown":
+            monday = datetime.strptime(session_info["week_start"], "%Y-%m-%d")
+            week_dates = []
+            for i in range(7):
+                date = monday + timedelta(days=i)
+                week_dates.append(date.strftime("%m/%d"))
+        else:
+            raise ValueError("week_start is Unknown")
     except:
         week_dates = ["01/01", "01/02", "01/03", "01/04", "01/05", "01/06", "01/07"]
 
@@ -75,17 +87,17 @@ def create_debug_readme_content(session_info, debug_mode=False):
         title_suffix = ""
         mode_indicator = ""
 
-    content = f"""# 🚀 알고리즘 스터디{title_suffix}
+    content = """# 🚀 알고리즘 스터디{}
 
-## 📅 {mode_indicator}{session_info['session_number']}회차 현황
-**기간**: {session_info['week_start']} ~ {session_info['week_end']}  
-**마감**: {session_info['deadline']}
+## 📅 {}{}회차 현황
+**기간**: {} ~ {}  
+**마감**: {}
 
 ### 제출 현황
 
 | 참가자 | 월 | 화 | 수 | 목 | 금 | 토 | 일 |
 |--------|----|----|----|----|----|----|---|
-|        | {week_dates[0]} | {week_dates[1]} | {week_dates[2]} | {week_dates[3]} | {week_dates[4]} | {week_dates[5]} | {week_dates[6]} |
+|        | {} | {} | {} | {} | {} | {} | {} |
 | debug_user | 1000 | 1001 | 1002 |  |  |  |  |
 
 ## 🤖 자동화 시스템 소개
@@ -156,11 +168,27 @@ MATTERMOST_WEBHOOK_URL=your_default_channel_webhook  # 기본 채널용
 
 ### 📞 문의사항
 - GitHub Issues 또는 Mattermost 채널에서 문의
-- 버그 리포트나 개선 제안 환영합니다!{debug_section}
+- 버그 리포트나 개선 제안 환영합니다!{}
 
 ---
-*Auto-updated by GitHub Actions 🤖{" (Debug Mode)" if debug_mode else ""}*
-"""
+*Auto-updated by GitHub Actions 🤖{}*
+""".format(
+        title_suffix,
+        mode_indicator,
+        session_info["session_number"],
+        session_info["week_start"],
+        session_info["week_end"],
+        session_info["deadline"],
+        week_dates[0],
+        week_dates[1],
+        week_dates[2],
+        week_dates[3],
+        week_dates[4],
+        week_dates[5],
+        week_dates[6],
+        debug_section,
+        " (Debug Mode)" if debug_mode else "",
+    )
 
     return content
 
@@ -189,14 +217,21 @@ def try_advanced_readme():
                 print("✅ 고급 README 생성 성공")
                 return True
             else:
-                print(f"⚠️ 고급 README 생성 실패: {result.stderr}")
+                print("⚠️ 고급 README 생성 실패: {}".format(result.stderr))
                 return False
         else:
-            print("ℹ️ 필요한 scripts 파일이 없음, 기본 README 사용")
+            missing_files = []
+            if not session_counter_exists:
+                missing_files.append("session_counter.py")
+            if not weekly_reset_exists:
+                missing_files.append("weekly_reset.py")
+
+            print("ℹ️ 필요한 scripts 파일이 없음: {}".format(", ".join(missing_files)))
+            print("   기본 README 사용")
             return False
 
     except Exception as e:
-        print(f"⚠️ 고급 README 생성 중 오류: {e}")
+        print("⚠️ 고급 README 생성 중 오류: {}".format(e))
         return False
 
 
@@ -216,9 +251,13 @@ def main():
         # 환경변수에서 회차 정보 가져오기
         session_info = get_session_info_from_env()
 
-        print(f"📝 README 생성 중... (디버그 모드: {args.debug_mode})")
-        print(f"   - 회차: {session_info['session_number']}회차")
-        print(f"   - 기간: {session_info['week_start']} ~ {session_info['week_end']}")
+        print("📝 README 생성 중... (디버그 모드: {})".format(args.debug_mode))
+        print("   - 회차: {}회차".format(session_info["session_number"]))
+        print(
+            "   - 기간: {} ~ {}".format(
+                session_info["week_start"], session_info["week_end"]
+            )
+        )
 
         # 고급 README 시도 (옵션)
         advanced_success = False
@@ -236,20 +275,20 @@ def main():
             with open(args.output, "w", encoding="utf-8") as f:
                 f.write(readme_content)
 
-            print(f"✅ 기본 README 생성 완료: {args.output}")
+            print("✅ 기본 README 생성 완료: {}".format(args.output))
 
         # 생성된 파일 정보 출력
         readme_path = Path(args.output)
         if readme_path.exists():
             line_count = len(readme_path.read_text(encoding="utf-8").splitlines())
             file_size = readme_path.stat().st_size
-            print(f"📊 생성된 README 정보:")
-            print(f"   - 파일: {args.output}")
-            print(f"   - 라인 수: {line_count}")
-            print(f"   - 파일 크기: {file_size} bytes")
+            print("📊 생성된 README 정보:")
+            print("   - 파일: {}".format(args.output))
+            print("   - 라인 수: {}".format(line_count))
+            print("   - 파일 크기: {} bytes".format(file_size))
 
     except Exception as e:
-        print(f"❌ README 생성 실패: {e}")
+        print("❌ README 생성 실패: {}".format(e))
         import traceback
 
         traceback.print_exc()
