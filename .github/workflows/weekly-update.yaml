@@ -1,4 +1,4 @@
-name: PR Debug - Weekly Update Test (Actually Update README)
+name: PR Branch - README Update (Only PR Branch)
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: 'PR 번호 (선택사항)'
+        description: 'PR 번호'
         required: false
         type: string
-      force_reset:
-        description: '강제 리셋'
+      force_update:
+        description: '강제 업데이트'
         required: false
         default: true
         type: boolean
@@ -19,14 +19,9 @@ on:
         required: false
         default: false
         type: boolean
-      actually_commit:
-        description: '실제로 README 커밋하기'
-        required: false
-        default: true
-        type: boolean
 
 permissions:
-  contents: write  # README 커밋을 위해 write 권한 필요
+  contents: write
   pull-requests: write
   issues: write
   actions: read
@@ -34,33 +29,51 @@ permissions:
 env:
   TZ: Asia/Seoul
   DEBUG_MODE: true
-  FORCE_RESET: true
 
 jobs:
-  pr-debug-with-commit:
+  update-pr-branch-readme:
     runs-on: ubuntu-latest
     steps:
-      - name: PR Debug Info
+      - name: PR Branch README Update Info
         run: |
-          echo "🔥 PR DEBUG: README 실제 업데이트 (커밋 포함)"
+          echo "🔥 PR 브랜치 README 업데이트 (main 브랜치 건드리지 않음)"
           echo "⏰ 실행 시간: $(date '+%Y-%m-%d %H:%M:%S KST')"
           echo "🔧 트리거: ${{ github.event_name }}"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "📝 PR 번호: #${{ github.event.number }}"
             echo "👤 PR 작성자: ${{ github.event.pull_request.user.login }}"
-            echo "🌿 브랜치: ${{ github.event.pull_request.head.ref }}"
-            echo "📄 제목: ${{ github.event.pull_request.title }}"
+            echo "🌿 PR 브랜치: ${{ github.event.pull_request.head.ref }}"
+            echo "📄 PR 제목: ${{ github.event.pull_request.title }}"
+            echo "🎯 기본 브랜치: ${{ github.event.pull_request.base.ref }}"
           fi
           echo "👤 실행자: ${{ github.actor }}"
-          echo "💾 실제 커밋: ${{ github.event.inputs.actually_commit || 'true' }}"
           
-      - name: Checkout repository
+      - name: Checkout PR branch (NOT main!)
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-          # main 브랜치로 체크아웃하여 실제 README 업데이트
-          ref: main
+          # PR의 head 브랜치로 체크아웃 (main 아님!)
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'main' }}
+          
+      - name: Verify we're on PR branch
+        run: |
+          CURRENT_BRANCH=$(git branch --show-current)
+          echo "📍 현재 브랜치: $CURRENT_BRANCH"
+          
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            EXPECTED_BRANCH="${{ github.event.pull_request.head.ref }}"
+            echo "📍 예상 브랜치: $EXPECTED_BRANCH"
+            
+            if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
+              echo "❌ 브랜치가 일치하지 않습니다!"
+              echo "   현재: $CURRENT_BRANCH"
+              echo "   예상: $EXPECTED_BRANCH"
+              exit 1
+            else
+              echo "✅ PR 브랜치 확인 완료: $CURRENT_BRANCH"
+            fi
+          fi
           
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -72,274 +85,290 @@ jobs:
           pip install requests pytz
           echo "📦 의존성 설치 완료"
           
-      - name: Debug - Check files structure
+      - name: Check latest submissions (from main branch)
         run: |
-          echo "📁 파일 구조 확인 (main 브랜치):"
-          echo "=== Root Directory ==="
-          ls -la
-          echo ""
-          echo "=== Scripts Directory ==="
-          if [ -d "scripts" ]; then
-            ls -la scripts/
-          else
-            echo "❌ scripts 디렉토리 없음"
+          echo "📂 최신 제출 현황 가져오기 (main 브랜치에서)..."
+          
+          # main 브랜치의 최신 상태 가져오기
+          git fetch origin main
+          
+          echo "🔍 main 브랜치의 사용자 디렉토리 스캔:"
+          git show main: | head -20 || echo "main 브랜치 정보 확인 중..."
+          
+          # main 브랜치의 파일 목록 확인
+          echo "📁 main 브랜치 파일 구조:"
+          git ls-tree -r --name-only main | grep -E "^[^./]+/[0-9]+/.*\.java$" | head -20 || echo "Java 파일 없음"
+          
+      - name: Get current session info
+        run: |
+          echo "🔍 현재 회차 정보 설정..."
+          
+          # 실제 현재 날짜 기준으로 회차 계산
+          TODAY=$(date '+%Y-%m-%d')
+          
+          # 2025-07-21을 1회차 시작으로 가정
+          START_DATE="2025-07-21"
+          START_TIMESTAMP=$(date -d "$START_DATE" +%s)
+          TODAY_TIMESTAMP=$(date -d "$TODAY" +%s)
+          
+          DAYS_DIFF=$(( (TODAY_TIMESTAMP - START_TIMESTAMP) / 86400 ))
+          WEEK_NUMBER=$(( DAYS_DIFF / 7 + 1 ))
+          
+          if [ $WEEK_NUMBER -lt 1 ]; then
+            WEEK_NUMBER=1
           fi
-          echo ""
-          echo "=== 사용자 디렉토리 확인 ==="
-          for dir in */; do
-            if [[ "$dir" != ".git/" && "$dir" != ".github/" && "$dir" != "scripts/" && "$dir" != "docs/" ]]; then
-              echo "📂 $dir"
-              if [ -d "$dir" ]; then
-                find "$dir" -name "*.java" | head -5
-              fi
-            fi
+          
+          # 이번 주 월요일과 일요일 계산
+          DAYS_SINCE_MONDAY=$(date +%u)
+          DAYS_SINCE_MONDAY=$((DAYS_SINCE_MONDAY - 1))
+          
+          WEEK_START=$(date -d "$TODAY - ${DAYS_SINCE_MONDAY} days" '+%Y-%m-%d')
+          WEEK_END=$(date -d "$WEEK_START + 6 days" '+%Y-%m-%d')
+          DEADLINE="$WEEK_END 23:59"
+          
+          echo "SESSION_NUMBER=$WEEK_NUMBER" >> $GITHUB_ENV
+          echo "TODAY=$TODAY" >> $GITHUB_ENV
+          echo "WEEK_START=$WEEK_START" >> $GITHUB_ENV
+          echo "WEEK_END=$WEEK_END" >> $GITHUB_ENV
+          echo "DEADLINE=$DEADLINE" >> $GITHUB_ENV
+          
+          echo "📊 계산된 회차 정보:"
+          echo "   - 회차: ${WEEK_NUMBER}회차"
+          echo "   - 기간: $WEEK_START ~ $WEEK_END"
+          echo "   - 마감: $DEADLINE"
+          echo "   - 오늘: $TODAY"
+          
+      - name: Scan actual submissions from main branch
+        run: |
+          echo "📂 main 브랜치에서 실제 제출 현황 스캔 중..."
+          
+          # main 브랜치의 사용자 제출 현황을 JSON 형태로 저장
+          echo "{" > submissions.json
+          
+          FIRST_USER=true
+          
+          # main 브랜치의 모든 Java 파일 목록 가져오기
+          git ls-tree -r --name-only main | grep -E "^[^./]+/[0-9]+/.*\.java$" | while read file; do
+            # 경로 분석: user/problem/file.java
+            USER=$(echo "$file" | cut -d'/' -f1)
+            PROBLEM=$(echo "$file" | cut -d'/' -f2)
+            
+            echo "   ✅ $USER/$PROBLEM"
+          done | sort | uniq > temp_submissions.txt
+          
+          # 사용자별로 그룹화
+          USERS=$(cat temp_submissions.txt | cut -d'/' -f1 | sort | uniq)
+          
+          echo "📊 발견된 사용자들:"
+          for USER in $USERS; do
+            PROBLEMS=$(cat temp_submissions.txt | grep "^$USER/" | cut -d'/' -f2 | sort -n | tr '\n' ',' | sed 's/,$//')
+            PROBLEM_COUNT=$(echo "$PROBLEMS" | tr ',' '\n' | wc -l)
+            echo "   - $USER: $PROBLEM_COUNT개 문제 ($PROBLEMS)"
+            
+            # 환경변수로 저장 (나중에 README 생성할 때 사용)
+            echo "USER_${USER}_PROBLEMS=$PROBLEMS" >> $GITHUB_ENV
           done
           
-      - name: Check current session info using script
-        id: session_check
+          echo "ALL_USERS=$USERS" >> $GITHUB_ENV
+          
+          rm -f temp_submissions.txt
+          
+      - name: Create updated README with latest submissions
         run: |
-          echo "🔍 회차 정보 확인 중 (실제 업데이트 모드)..."
+          echo "📝 최신 제출 현황으로 README 생성 중..."
           
-          if [ -f "scripts/check_session.py" ]; then
-            echo "📝 scripts/check_session.py 실행 중..."
-            
-            cd scripts
-            RESULT=$(python check_session.py 2>&1)
-            cd ..
-            
-            echo "📋 스크립트 실행 결과:"
-            echo "$RESULT"
-            
-            echo "$RESULT" | grep "=" >> $GITHUB_ENV
-            
-            echo "✅ check_session.py 실행 완료"
-          else
-            echo "❌ scripts/check_session.py 없음 - 실제 회차 정보 생성"
-            
-            TODAY=$(date '+%Y-%m-%d')
-            WEEK_END=$(date -d '+6 days' '+%Y-%m-%d')
-            
-            # 실제 회차 번호 사용 (PR 번호 기반이 아닌)
-            SESSION_NUM="2"  # 실제 현재 회차
-            
-            echo "IS_NEW_WEEK=true" >> $GITHUB_ENV
-            echo "SESSION_NUMBER=$SESSION_NUM" >> $GITHUB_ENV
-            echo "TODAY=$TODAY" >> $GITHUB_ENV
-            echo "WEEK_START=$TODAY" >> $GITHUB_ENV
-            echo "WEEK_END=$WEEK_END" >> $GITHUB_ENV
-            echo "DEADLINE=$WEEK_END 23:59" >> $GITHUB_ENV
-            echo "HAS_SESSION_COUNTER=false" >> $GITHUB_ENV
-            echo "TOTAL_WEEKS=1" >> $GITHUB_ENV
-            echo "TOTAL_DAYS=7" >> $GITHUB_ENV
-            echo "STUDY_START=2025-07-21" >> $GITHUB_ENV
-          fi
+          # 주간 날짜 계산
+          WEEK_START_DATE=$(date -d "$WEEK_START" '+%Y-%m-%d')
+          MONDAY=$(date -d "$WEEK_START_DATE" '+%m/%d')
+          TUESDAY=$(date -d "$WEEK_START_DATE + 1 day" '+%m/%d')
+          WEDNESDAY=$(date -d "$WEEK_START_DATE + 2 days" '+%m/%d')
+          THURSDAY=$(date -d "$WEEK_START_DATE + 3 days" '+%m/%d')
+          FRIDAY=$(date -d "$WEEK_START_DATE + 4 days" '+%m/%d')
+          SATURDAY=$(date -d "$WEEK_START_DATE + 5 days" '+%m/%d')
+          SUNDAY=$(date -d "$WEEK_START_DATE + 6 days" '+%m/%d')
           
-      - name: Debug - Show environment variables
-        run: |
-          echo "🐛 환경 변수 확인 (실제 업데이트):"
-          echo "  IS_NEW_WEEK: $IS_NEW_WEEK"
-          echo "  FORCE_RESET: $FORCE_RESET"
-          echo "  SESSION_NUMBER: $SESSION_NUMBER"
-          echo "  TODAY: $TODAY"
-          echo "  WEEK_START: $WEEK_START"
-          echo "  WEEK_END: $WEEK_END"
-          echo "  DEADLINE: $DEADLINE"
-          echo "  HAS_SESSION_COUNTER: $HAS_SESSION_COUNTER"
-          echo "  TOTAL_WEEKS: $TOTAL_WEEKS"
-          echo "  TOTAL_DAYS: $TOTAL_DAYS"
+          # README 생성 시작
+          cat > README.md << EOF
+          # 🚀 알고리즘 스터디
+
+          ## 📅 ${SESSION_NUMBER}회차 현황
+          **기간**: ${WEEK_START} ~ ${WEEK_END}
+
+          **마감**: ${DEADLINE}
+
+          ### 제출 현황
+
+          | 참가자 | 월 | 화 | 수 | 목 | 금 | 토 | 일 |
+          |--------|----|----|----|----|----|----|---|
+          |        | ${MONDAY} | ${TUESDAY} | ${WEDNESDAY} | ${THURSDAY} | ${FRIDAY} | ${SATURDAY} | ${SUNDAY} |
+          EOF
           
-      - name: Create README backup
-        run: |
-          if [ -f "README.md" ]; then
-            BACKUP_NAME="README_backup_$(date +%Y%m%d_%H%M%S)_pr_debug.md"
-            cp README.md "$BACKUP_NAME"
-            echo "📁 README 백업 생성: $BACKUP_NAME"
-            echo "BACKUP_FILE=$BACKUP_NAME" >> $GITHUB_ENV
-          else
-            echo "ℹ️ 기존 README.md 없음"
-          fi
-          
-      - name: Generate actual README using script
-        run: |
-          echo "🔄 실제 README 생성 중 (디버그 트리거, 실제 업데이트)..."
-          
-          if [ -f "scripts/create_debug_readme.py" ]; then
-            echo "📝 scripts/create_debug_readme.py 실행 중..."
-            
-            cd scripts
-            python create_debug_readme.py --debug-mode --try-advanced
-            cd ..
-            
-            if [ $? -eq 0 ]; then
-              echo "✅ 스크립트를 통한 README 생성 성공"
-              echo "UPDATE_SUCCESS=true" >> $GITHUB_ENV
-            else
-              echo "❌ 스크립트를 통한 README 생성 실패"
-              echo "UPDATE_SUCCESS=false" >> $GITHUB_ENV
-            fi
-          else
-            echo "❌ scripts/create_debug_readme.py 없음 - 기본 README 생성"
-            
-            # 실제 현재 회차 정보로 README 생성
-            echo "# 🚀 알고리즘 스터디" > README.md
-            echo "" >> README.md
-            echo "## 📅 ${SESSION_NUMBER}회차 현황" >> README.md
-            echo "**기간**: ${WEEK_START} ~ ${WEEK_END}" >> README.md
-            echo "**마감**: ${DEADLINE}" >> README.md
-            echo "" >> README.md
-            echo "### 제출 현황" >> README.md
-            echo "" >> README.md
-            echo "| 참가자 | 월 | 화 | 수 | 목 | 금 | 토 | 일 |" >> README.md
-            echo "|--------|----|----|----|----|----|----|---|" >> README.md
-            echo "|        | 07/21 | 07/22 | 07/23 | 07/24 | 07/25 | 07/26 | 07/27 |" >> README.md
-            
-            # 실제 제출 현황 스캔 및 추가
-            echo "📂 실제 제출 현황 스캔 중..."
-            for user_dir in */; do
-              if [[ "$user_dir" != ".git/" && "$user_dir" != ".github/" && "$user_dir" != "scripts/" && "$user_dir" != "docs/" ]]; then
-                user_name=$(basename "$user_dir")
-                problems=()
+          # 실제 사용자 데이터 추가
+          if [ -n "$ALL_USERS" ]; then
+            for USER in $ALL_USERS; do
+              PROBLEMS_VAR="USER_${USER}_PROBLEMS"
+              PROBLEMS=${!PROBLEMS_VAR}
+              
+              if [ -n "$PROBLEMS" ]; then
+                # 문제들을 요일별로 분배 (간단히 토요일에 모두 표시)
+                PROBLEM_LIST=$(echo "$PROBLEMS" | sed 's/,/, /g')
                 
-                if [ -d "$user_dir" ]; then
-                  for problem_dir in "$user_dir"*/; do
-                    if [ -d "$problem_dir" ]; then
-                      problem_num=$(basename "$problem_dir")
-                      if [[ "$problem_num" =~ ^[0-9]+$ ]]; then
-                        if find "$problem_dir" -name "*.java" | grep -q .; then
-                          problems+=("$problem_num")
-                        fi
-                      fi
-                    fi
-                  done
+                # 문제가 3개 이상이면 ...으로 축약
+                PROBLEM_COUNT=$(echo "$PROBLEMS" | tr ',' '\n' | wc -l)
+                if [ $PROBLEM_COUNT -gt 3 ]; then
+                  FIRST_THREE=$(echo "$PROBLEMS" | cut -d',' -f1-3 | sed 's/,/, /g')
+                  PROBLEM_LIST="${FIRST_THREE}..."
                 fi
                 
-                if [ ${#problems[@]} -gt 0 ]; then
-                  # 문제 번호 정렬
-                  IFS=$'\n' sorted_problems=($(sort -n <<<"${problems[*]}"))
-                  
-                  # 토요일에 모든 문제 표시 (임시)
-                  problem_list=""
-                  if [ ${#sorted_problems[@]} -le 3 ]; then
-                    problem_list=$(IFS=', '; echo "${sorted_problems[*]}")
-                  else
-                    problem_list="${sorted_problems[0]}, ${sorted_problems[1]}, ${sorted_problems[2]}..."
-                  fi
-                  
-                  echo "| $user_name |  |  |  |  |  | $problem_list |  |" >> README.md
-                  echo "   ✅ $user_name: ${#sorted_problems[@]}개 문제 발견"
-                fi
+                echo "| ${USER} |  |  |  |  |  | ${PROBLEM_LIST} |  |" >> README.md
+                echo "   ✅ $USER 추가: $PROBLEM_COUNT개 문제"
               fi
             done
-            
-            echo "" >> README.md
-            echo "## 🤖 자동화 시스템 소개" >> README.md
-            echo "" >> README.md
-            echo "### 🔧 주요 기능" >> README.md
-            echo "- **자동 테스트**: 샘플 테스트케이스 + AI 생성 반례 테스트" >> README.md
-            echo "- **스마트 채점**: 부분 점수 지원 (샘플만/생성 테스트만 통과)" >> README.md
-            echo "- **개인 알림**: Mattermost 개인 DM으로 결과 알림" >> README.md
-            echo "- **자동 README 업데이트**: 제출 현황 실시간 반영" >> README.md
-            echo "- **PR 디버그**: PR 생성 시 자동 테스트 실행" >> README.md
-            echo "" >> README.md
-            echo "---" >> README.md
-            echo "*Auto-updated by GitHub Actions 🤖 (PR Debug로 실제 업데이트됨)*" >> README.md
-            
-            echo "✅ 실제 제출 현황 반영 README 생성 완료"
-            echo "UPDATE_SUCCESS=true" >> $GITHUB_ENV
+          else
+            echo "| 아직_제출없음 |  |  |  |  |  |  |  |" >> README.md
           fi
           
-      - name: Show generated README preview
-        run: |
-          echo "📄 생성된 README.md 미리보기 (첫 50줄):"
-          echo "================================================"
-          head -50 README.md
-          echo "================================================"
-          echo "(총 $(wc -l < README.md) 줄, $(stat -c%s README.md) bytes)"
+          # README 나머지 부분 추가
+          cat >> README.md << 'EOF'
+
+          ## 🤖 자동화 시스템 소개
+
+          ### 🔧 주요 기능
+          - **자동 테스트**: 샘플 테스트케이스 + AI 생성 반례 테스트
+          - **스마트 채점**: 부분 점수 지원 (샘플만/생성 테스트만 통과)
+          - **개인 알림**: Mattermost 개인 DM으로 결과 알림
+          - **자동 README 업데이트**: 제출 현황 실시간 반영
+
+          ### 🧠 사용 기술
+          - **AI 모델**: Google Gemini 2.5-flash
+          - **테스트 생성**: 문제 분석 → 반례 자동 생성
+          - **플랫폼**: GitHub Actions + Python
+          - **개인 알림**: 사용자별 주간 현황 체크 + 맞춤 알림
+
+          ### 📝 사용 방법
+
+          #### 1. Repository 설정
+          ```bash
+          # 1. 이 Repository Fork
+          # 2. 본인 디렉토리 생성: 본인깃허브아이디/문제번호/Main.java
+          # 3. 코드 작성 후 PR 생성
+          ```
+
+          #### 2. 필요한 Secrets 설정
+          Repository Settings → Secrets and variables → Actions에서 다음 설정:
+
+          ```
+          GEMINI_API_KEY=your_gemini_api_key
+          MATTERMOST_WEBHOOK_URL=your_default_channel_webhook  # 기본 채널용
+          본인깃허브아이디_MATTERMOST_URL=your_personal_webhook  # 개인 DM용 (필수)
+          ```
+
+          **📱 개인 알림 설정**: 주간 5문제 미달 시 개인 DM 알림을 받으려면 반드시 개인 webhook URL을 설정하세요. 
+          자세한 설정 방법은 `docs/개인알림_설정가이드.md`를 참고하세요.
+
+          #### 3. 디렉토리 구조
+          ```
+          본인깃허브아이디/
+          ├── 1000/
+          │   └── Main.java
+          ├── 1001/
+          │   └── Main.java
+          └── 2557/
+              └── Main.java
+          ```
+
+          #### 4. PR 제출 과정
+          1. **브랜치 생성**: `git checkout -b week-N-solutions`  
+          2. **코드 작성**: 위 구조대로 파일 배치
+          3. **PR 생성**: main 브랜치로 Pull Request
+          4. **자동 테스트**: GitHub Actions에서 자동 실행
+          5. **결과 확인**: 개인 DM + PR 댓글로 결과 알림
+          6. **자동 병합**: 테스트 통과 시 자동 README 업데이트 후 병합
+
+          ### 🎯 테스트 기준
+          - **완전 성공**: 샘플 + 생성 테스트 모두 통과
+          - **부분 성공**: 샘플 또는 생성 테스트 중 하나만 통과  
+          - **실패**: 모든 테스트 실패
+          - **PR 승인**: 한 문제 이상 성공 시 자동 승인
+
+          ### 🚨 주의사항
+          - Java 11 환경에서 테스트됩니다
+          - 파일명은 반드시 `Main.java`로 통일
+          - 패키지 선언 없이 작성해주세요
+          - 무한루프나 과도한 메모리 사용 시 타임아웃됩니다
+
+          ### 📞 문의사항
+          - GitHub Issues 또는 Mattermost 채널에서 문의
+          - 버그 리포트나 개선 제안 환영합니다!
+
+          ---
+          *Auto-updated by GitHub Actions 🤖 (PR 브랜치에서 main 브랜치 데이터 반영)*
+          EOF
           
-      - name: Actually commit README changes
-        if: env.UPDATE_SUCCESS == 'true' && (github.event.inputs.actually_commit != 'false')
+          echo "✅ 최신 제출 현황이 반영된 README 생성 완료"
+          
+      - name: Show updated README preview
         run: |
-          echo "💾 실제 README.md 커밋 중..."
+          echo "📄 업데이트된 README.md 미리보기:"
+          echo "================================================"
+          head -30 README.md
+          echo "================================================"
+          echo "(총 $(wc -l < README.md) 줄)"
+          
+          echo ""
+          echo "📊 반영된 제출 현황:"
+          if [ -n "$ALL_USERS" ]; then
+            for USER in $ALL_USERS; do
+              PROBLEMS_VAR="USER_${USER}_PROBLEMS"
+              PROBLEMS=${!PROBLEMS_VAR}
+              PROBLEM_COUNT=$(echo "$PROBLEMS" | tr ',' '\n' | wc -l)
+              echo "   - $USER: $PROBLEM_COUNT개 문제"
+            done
+          else
+            echo "   - 제출된 문제 없음"
+          fi
+          
+      - name: Commit README changes to PR branch
+        run: |
+          echo "💾 PR 브랜치에 README 변경사항 커밋 중..."
+          
+          CURRENT_BRANCH=$(git branch --show-current)
+          echo "📍 커밋할 브랜치: $CURRENT_BRANCH"
           
           git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action - PR Debug Update"
+          git config --local user.name "GitHub Action - PR README Update"
           
-          # 변경된 파일들 추가
-          git add README.md
-          git add $BACKUP_FILE 2>/dev/null || true
-          
-          if git diff --staged --quiet; then
-            echo "📝 변경 사항이 없습니다."
-            echo "ACTUALLY_COMMITTED=false" >> $GITHUB_ENV
+          # 변경사항 확인
+          if git diff --quiet README.md; then
+            echo "📝 README 변경사항이 없습니다."
+            echo "CHANGES_COMMITTED=false" >> $GITHUB_ENV
           else
-            echo "📝 실제 변경사항 커밋:"
-            git diff --staged --name-only
+            echo "📝 README 변경사항 발견, 커밋 중..."
+            
+            git add README.md
             
             COMMIT_TIME=$(date '+%Y-%m-%d %H:%M:%S KST')
-            PR_INFO=""
-            if [ "${{ github.event_name }}" = "pull_request" ]; then
-              PR_INFO=" (PR #${{ github.event.number }}에 의해 트리거됨)"
-            fi
+            USER_COUNT=$(echo "$ALL_USERS" | wc -w)
             
-            git commit -m "🔄 ${SESSION_NUMBER}회차 README 자동 업데이트${PR_INFO}
+            git commit -m "📝 README 자동 업데이트 - ${SESSION_NUMBER}회차 최신 제출 현황 반영
 
             📅 기간: ${WEEK_START} ~ ${WEEK_END}
             ⏰ 마감: ${DEADLINE}
+            👥 참가자: ${USER_COUNT}명
             🔧 트리거: ${{ github.event_name }}
-            👤 실행자: ${{ github.actor }}
-            🕐 업데이트 시간: $COMMIT_TIME
+            🌿 브랜치: $CURRENT_BRANCH
+            🕐 업데이트: $COMMIT_TIME
 
-            ✨ 실제 제출 현황을 스캔하여 반영했습니다."
+            ✨ main 브랜치의 최신 제출 현황을 스캔하여 반영했습니다."
                         
-            git push origin main
-            
-            echo "✅ README.md 실제 커밋 및 푸시 완료!"
-            echo "ACTUALLY_COMMITTED=true" >> $GITHUB_ENV
-          fi
+                        git push origin "$CURRENT_BRANCH"
+                        
+                        echo "✅ PR 브랜치에 README 업데이트 커밋 완료!"
+                        echo "CHANGES_COMMITTED=true" >> $GITHUB_ENV
+                      fi
           
-      - name: Send actual notification
-        if: env.ACTUALLY_COMMITTED == 'true' && github.event.inputs.notification == 'true'
-        env:
-          YEOMIN4242_MATTERMOST_URL: ${{ secrets.YEOMIN4242_MATTERMOST_URL }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          echo "📢 실제 README 업데이트 알림 전송..."
-          
-          if [ -f "scripts/send_notification.py" ]; then
-            echo "📨 scripts/send_notification.py 실행 중..."
-            
-            cd scripts
-            python send_notification.py --debug-mode
-            cd ..
-            
-            echo "✅ 알림 전송 완료"
-          else
-            echo "❌ scripts/send_notification.py 없음 - 기본 알림"
-            
-            if [ -n "$YEOMIN4242_MATTERMOST_URL" ]; then
-              MESSAGE="🔄 **README 실제 업데이트 완료!**
-
-          📅 **${SESSION_NUMBER}회차**: ${WEEK_START} ~ ${WEEK_END}
-          ⏰ **마감**: ${DEADLINE}
-          🔧 **트리거**: ${{ github.event_name }}
-          👤 **실행자**: ${{ github.actor }}
-          🕐 **시간**: $(date '+%Y-%m-%d %H:%M:%S KST')
-
-          ✅ 실제 제출 현황이 README에 반영되었습니다!
-          🔗 **확인하기**: https://github.com/${{ github.repository }}"
-
-              curl -X POST "$YEOMIN4242_MATTERMOST_URL" \
-                -H "Content-Type: application/json" \
-                -d '{"text":"'"$MESSAGE"'"}' || echo "알림 전송 실패"
-            else
-              echo "⚠️ Mattermost webhook URL이 설정되지 않음"
-            fi
-          fi
-          
-      - name: Add PR comment with actual results
-        if: github.event_name == 'pull_request' && env.UPDATE_SUCCESS == 'true'
+      - name: Add PR comment with update results
+        if: github.event_name == 'pull_request' && env.CHANGES_COMMITTED == 'true'
         continue-on-error: true
         uses: actions/github-script@v7
         with:
@@ -347,39 +376,53 @@ jobs:
           script: |
             const prNumber = context.payload.number;
             const sessionNumber = process.env.SESSION_NUMBER;
-            const updateSuccess = process.env.UPDATE_SUCCESS;
-            const actuallyCommitted = process.env.ACTUALLY_COMMITTED;
+            const weekStart = process.env.WEEK_START;
+            const weekEnd = process.env.WEEK_END;
+            const deadline = process.env.DEADLINE;
+            const allUsers = process.env.ALL_USERS;
+            const userCount = allUsers ? allUsers.split(' ').length : 0;
             
-            const comment = `## 🔥 PR 디버그: README 실제 업데이트 완료!
+            let userList = '';
+            if (allUsers) {
+              const users = allUsers.split(' ');
+              for (const user of users) {
+                const problemsVar = `USER_${user}_PROBLEMS`;
+                const problems = process.env[problemsVar] || '';
+                const problemCount = problems ? problems.split(',').length : 0;
+                userList += `- **${user}**: ${problemCount}개 문제\n`;
+              }
+            } else {
+              userList = '- 아직 제출된 문제가 없습니다.\n';
+            }
             
-            **⏰ 실행 시간**: ${new Date().toLocaleString('ko-KR', {timeZone: 'Asia/Seoul'})} KST
-            **🎯 회차**: ${sessionNumber}회차 (실제 업데이트)
-            **📝 README 생성**: ${updateSuccess === 'true' ? '✅ 성공' : '❌ 실패'}
-            **💾 실제 커밋**: ${actuallyCommitted === 'true' ? '✅ 완료' : '❌ 변경사항 없음'}
+            const comment = `## 📝 README 자동 업데이트 완료!
             
-            ### 📋 실제 수행된 작업
-            - ✅ main 브랜치에서 실제 파일 스캔
-            - ✅ 실제 제출 현황 반영
-            - ✅ README.md 파일 실제 업데이트
-            - ✅ Git 커밋 및 푸시 완료
+            **⏰ 업데이트 시간**: ${new Date().toLocaleString('ko-KR', {timeZone: 'Asia/Seoul'})} KST
+            **🎯 회차**: ${sessionNumber}회차
+            **📅 기간**: ${weekStart} ~ ${weekEnd}
+            **⏰ 마감**: ${deadline}
+            **👥 참가자**: ${userCount}명
             
-            ### 🔧 스캔 결과
-            - **실제 repository 파일 스캔 완료**
-            - **사용자별 문제 폴더 자동 인식**
-            - **Main.java 파일 존재 여부 확인**
-            - **제출 현황 테이블 자동 생성**
+            ### 📊 반영된 제출 현황
+            ${userList}
             
-            ### 📊 업데이트 정보
-            - **회차**: ${sessionNumber}회차
-            - **기간**: ${process.env.WEEK_START} ~ ${process.env.WEEK_END}
-            - **마감**: ${process.env.DEADLINE}
+            ### 🔧 수행된 작업
+            ✅ **main 브랜치 스캔**: 최신 제출 현황 확인
+            ✅ **README 업데이트**: 실제 데이터로 테이블 구성
+            ✅ **PR 브랜치 커밋**: main 브랜치는 건드리지 않음
+            ✅ **제출 현황 반영**: 사용자별 문제 수 자동 계산
             
-            > 🎉 **완료**: 이제 main 브랜치의 README.md가 실제로 업데이트되었습니다!
+            ### 📍 업데이트 위치
+            - **대상 브랜치**: \`${{ github.event.pull_request.head.ref }}\` (PR 브랜치)
+            - **기준 데이터**: \`main\` 브랜치의 최신 제출 현황
+            - **업데이트 파일**: \`README.md\`
+            
+            > 💡 **참고**: main 브랜치는 변경되지 않았으며, 이 PR 브랜치에서만 README가 업데이트되었습니다.
             > 
-            > 📝 **확인**: [최신 README 보기](https://github.com/${context.repo.owner}/${context.repo.repo})
+            > 📝 **확인**: 이 PR의 Files changed 탭에서 업데이트된 README를 확인할 수 있습니다.
             
             ---
-            *🤖 실제 README 업데이트 완료 - PR #${prNumber}에 의해 트리거됨*`;
+            *🤖 PR 브랜치 README 자동 업데이트 완료*`;
             
             github.rest.issues.createComment({
               issue_number: prNumber,
@@ -391,44 +434,48 @@ jobs:
       - name: Final summary
         if: always()
         run: |
-          echo "## 🔥 PR Debug - 실제 README 업데이트 완료!" >> $GITHUB_STEP_SUMMARY
+          echo "## 📝 PR 브랜치 README 업데이트 완료!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**⚠️ 주의: 이번에는 실제로 main 브랜치 README가 업데이트되었습니다!**" >> $GITHUB_STEP_SUMMARY
+          echo "**✅ 안전**: main 브랜치는 건드리지 않고 PR 브랜치만 업데이트했습니다." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**실행 시간**: $(date '+%Y-%m-%d %H:%M:%S KST')" >> $GITHUB_STEP_SUMMARY
           echo "**트리거**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "**PR 번호**: #${{ github.event.number }}" >> $GITHUB_STEP_SUMMARY
-            echo "**PR 작성자**: ${{ github.event.pull_request.user.login }}" >> $GITHUB_STEP_SUMMARY
-            echo "**브랜치**: ${{ github.event.pull_request.head.ref }}" >> $GITHUB_STEP_SUMMARY
+            echo "**PR 브랜치**: ${{ github.event.pull_request.head.ref }}" >> $GITHUB_STEP_SUMMARY
+            echo "**기본 브랜치**: ${{ github.event.pull_request.base.ref }}" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 실제 업데이트 결과" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 업데이트 결과" >> $GITHUB_STEP_SUMMARY
           echo "- **회차**: ${SESSION_NUMBER}회차" >> $GITHUB_STEP_SUMMARY
           echo "- **기간**: ${WEEK_START} ~ ${WEEK_END}" >> $GITHUB_STEP_SUMMARY
           echo "- **마감**: ${DEADLINE}" >> $GITHUB_STEP_SUMMARY
-          echo "- **README 생성**: ${UPDATE_SUCCESS}" >> $GITHUB_STEP_SUMMARY
-          echo "- **실제 커밋**: ${ACTUALLY_COMMITTED}" >> $GITHUB_STEP_SUMMARY
+          echo "- **README 커밋**: ${CHANGES_COMMITTED}" >> $GITHUB_STEP_SUMMARY
           
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🎯 수행된 작업" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **main 브랜치 체크아웃**: 실제 업데이트를 위해" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **실제 파일 스캔**: repository의 모든 사용자 폴더" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **제출 현황 반영**: 실제 Main.java 파일 기반" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **README 생성**: 실제 데이터로 테이블 구성" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Git 커밋**: main 브랜치에 실제 푸시" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "$BACKUP_FILE" != "" ]; then
-            echo "📁 **백업**: $BACKUP_FILE" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$ALL_USERS" ]; then
+            USER_COUNT=$(echo "$ALL_USERS" | wc -w)
+            echo "- **참가자**: ${USER_COUNT}명" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 👥 스캔된 참가자" >> $GITHUB_STEP_SUMMARY
+            for USER in $ALL_USERS; do
+              PROBLEMS_VAR="USER_${USER}_PROBLEMS"
+              PROBLEMS=${!PROBLEMS_VAR}
+              PROBLEM_COUNT=$(echo "$PROBLEMS" | tr ',' '\n' | wc -l)
+              echo "- **$USER**: $PROBLEM_COUNT개 문제" >> $GITHUB_STEP_SUMMARY
+            done
+          else
+            echo "- **참가자**: 0명 (제출된 문제 없음)" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 확인하기" >> $GITHUB_STEP_SUMMARY
-          echo "- [📝 업데이트된 README 보기](https://github.com/${{ github.repository }})" >> $GITHUB_STEP_SUMMARY
-          echo "- [📈 커밋 히스토리 보기](https://github.com/${{ github.repository }}/commits/main)" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎯 수행된 작업" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **PR 브랜치 체크아웃**: main 브랜치 건드리지 않음" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **main 브랜치 스캔**: 최신 제출 현황 확인" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **README 생성**: 실제 데이터로 테이블 구성" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **PR 브랜치 커밋**: 안전한 브랜치별 업데이트" >> $GITHUB_STEP_SUMMARY
           
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "*🔥 실제 README 업데이트 완료 - PR 트리거로 main 브랜치 업데이트!*" >> $GITHUB_STEP_SUMMARY
+          echo "*📝 PR 브랜치 전용 README 업데이트 (main 브랜치 안전)*" >> $GITHUB_STEP_SUMMARY
