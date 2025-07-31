@@ -9,7 +9,7 @@ public class Main {
 		int a = scanner.nextInt();
 		int b = scanner.nextInt();
 		
-		// a + b를 합하여 출력
+		// a + b를 합하여 출력 
 		System.out.println(a + b);
 	}
 	
