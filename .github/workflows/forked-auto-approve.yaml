@@ -1,0 +1,86 @@
+# 포크된 저장소 PR 자동 승인 워크플로우
+name: Auto Approve Fork PRs
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  pull-requests: write
+  actions: write
+
+jobs:
+  auto-approve:
+    # 포크된 저장소에서만 실행
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Fork PR
+        id: validate
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          
+          echo "🔍 포크 PR 검증: $BRANCH_NAME by $AUTHOR"
+          
+          # 알고리즘 스터디 브랜치 패턴 확인
+          if [[ $BRANCH_NAME =~ ^week-([0-9]+)-(.+)$ ]]; then
+            WEEK_NUMBER="${BASH_REMATCH[1]}"
+            BRANCH_USER="${BASH_REMATCH[2]}"
+            
+            if [ "$BRANCH_USER" = "$AUTHOR" ]; then
+              echo "✅ 유효한 알고리즘 스터디 PR입니다."
+              echo "should_approve=true" >> $GITHUB_OUTPUT
+            else
+              echo "❌ 브랜치 사용자와 PR 작성자가 다릅니다."
+              echo "should_approve=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "ℹ️ 알고리즘 스터디 브랜치가 아닙니다."
+            echo "should_approve=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Auto Approve Valid Fork PRs
+        if: steps.validate.outputs.should_approve == 'true'
+        uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          review-message: |
+            🤖 **자동 승인된 포크 PR**
+            
+            ✅ 이 PR은 올바른 브랜치 패턴(`week-N-<githubID>`)을 따르는 알고리즘 스터디 제출입니다.
+            🚀 GitHub Actions 워크플로우가 자동으로 실행됩니다.
+            
+            **제출 정보:**
+            - 브랜치: `${{ github.event.pull_request.head.ref }}`
+            - 제출자: `${{ github.event.pull_request.user.login }}`
+            - 포크 저장소: `${{ github.event.pull_request.head.repo.full_name }}`
+
+      - name: Comment on Invalid Fork PRs
+        if: steps.validate.outputs.should_approve == 'false'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const branchName = '${{ github.event.pull_request.head.ref }}';
+            const author = '${{ github.event.pull_request.user.login }}';
+            
+            let commentBody = `## 🚫 포크 PR 자동 승인 불가\n\n`;
+            commentBody += `현재 브랜치: \`${branchName}\`\n`;
+            commentBody += `PR 작성자: \`${author}\`\n\n`;
+            commentBody += `❌ 이 PR은 자동 승인 조건을 만족하지 않습니다.\n\n`;
+            commentBody += `### 📝 자동 승인 조건\n`;
+            commentBody += `1. 브랜치 패턴: \`week-N-<githubID>\`\n`;
+            commentBody += `2. 브랜치의 GitHub ID와 PR 작성자 일치\n\n`;
+            commentBody += `### ✅ 올바른 예시\n`;
+            commentBody += `- \`week-1-${author}\`\n`;
+            commentBody += `- \`week-2-${author}\`\n\n`;
+            commentBody += `⚠️ **수동 승인이 필요합니다.** 저장소 관리자가 검토 후 승인해주세요.`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });

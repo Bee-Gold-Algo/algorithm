@@ -1,13 +1,15 @@
-# 워크플로우 이름: 알고리즘 스터디 자동화 (PR 및 주간 업데이트)
-name: Algorithm Study Automation (PR & Weekly)
+# 워크플로우 이름: 포크 PR 자동 처리 (테스트, 알림, README 업데이트, 승인)
+# 설명: 외부 기여자가 포크한 저장소에서 올바른 형식으로 PR을 보냈을 때,
+#       자동으로 코드를 테스트하고 결과를 알린 후, 원본 저장소의 README.md를 업데이트하고,
+#       성공적으로 완료되면 해당 PR을 자동으로 승인합니다.
+#       이 워크플로우는 PAT를 사용하지 않으며, 오직 포크된 저장소의 PR에만 반응합니다.
+
+name: Fork PR Automation (Complete with Notification)
 
 on:
-  schedule:
-    # KST 기준 매주 월요일 00:00 (UTC 일요일 15:00)
-    - cron: '0 15 * * 0'
-  pull_request:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -19,134 +21,220 @@ env:
   JAVA_VERSION: "11"
 
 jobs:
-  test-and-update:
+  process_fork_pr:
+    # 이 잡(job)은 포크된 저장소에서 온 PR일 경우에만 실행됩니다.
+    if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Workflow Info
+      # =================================================================
+      # 1. 브랜치 전략 검증
+      # =================================================================
+      - name: Validate Branch Strategy
+        id: branch-validation
         run: |
-          echo "🔥 알고리즘 스터디 자동화 워크플로우 시작"
-          echo "⏰ 실행 시간: $(date '+%Y-%m-%d %H:%M:%S KST')"
-          echo "🔧 트리거: ${{ github.event_name }}"
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          VALIDATION_RESULT="invalid"
+          WEEK_NUMBER=""
+          BRANCH_USER=""
 
-      - name: Checkout Code
+          if [[ $BRANCH_NAME =~ ^week-([0-9]+)-(.+)$ ]]; then
+            WEEK_NUMBER="${BASH_REMATCH[1]}"
+            BRANCH_USER="${BASH_REMATCH[2]}"
+            if [ "$BRANCH_USER" = "$AUTHOR" ]; then
+              VALIDATION_RESULT="valid"
+              echo "✅ 유효한 브랜치입니다: ${BRANCH_NAME}"
+            else
+              echo "❌ 브랜치 사용자(${BRANCH_USER})와 PR 작성자(${AUTHOR})가 다릅니다."
+            fi
+          else
+            echo "❌ 브랜치 이름이 week-N-<githubID> 패턴을 따르지 않습니다."
+          fi
+          echo "valid=$VALIDATION_RESULT" >> $GITHUB_OUTPUT
+          echo "week_number=$WEEK_NUMBER" >> $GITHUB_OUTPUT
+          echo "branch_user=$BRANCH_USER" >> $GITHUB_OUTPUT
+
+      - name: Comment on Invalid Branch
+        if: steps.branch-validation.outputs.valid == 'invalid'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '## ⚠️ 브랜치 전략 검증 실패\n\n브랜치 이름이 `week-N-<githubID>` 패턴을 따르고, `<githubID>`가 본인의 ID와 일치해야 합니다.'
+            });
+            process.exit(1); // 워크플로우를 실패로 중단
+
+      # =================================================================
+      # 2. PR 코드 체크아웃 및 테스트
+      # =================================================================
+      - name: Checkout PR Code for Testing
+        if: steps.branch-validation.outputs.valid == 'valid'
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ github.event.pull_request.head.ref || 'main' }}
-          fetch-depth: 0
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Setup Python and Java
+        if: steps.branch-validation.outputs.valid == 'valid'
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - uses: actions/setup-java@v4
+      
+      - name: Setup Java
+        if: steps.branch-validation.outputs.valid == 'valid'
+        uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: "temurin"
 
       - name: Install Python dependencies
+        if: steps.branch-validation.outputs.valid == 'valid'
         run: |
           python -m pip install --upgrade pip
           pip install google-genai pytz requests beautifulsoup4
 
-      # =================================================================
-      #  PR 실행 로직
-      # =================================================================
       - name: Run PR Logic - Extract & Test
-        if: github.event_name == 'pull_request'
+        if: steps.branch-validation.outputs.valid == 'valid'
         id: pr-test
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          WEEK_NUMBER: ${{ steps.branch-validation.outputs.week_number }}
+          BRANCH_USER: ${{ steps.branch-validation.outputs.branch_user }}
         run: |
           python scripts/extract_pr_info.py
           if [ -f "problems_info.json" ]; then
             python scripts/multi_test_runner.py
           else
             echo "테스트할 문제가 없습니다."
+            echo '[]' > problems_info.json
           fi
         continue-on-error: true
 
-      - name: Run PR Logic - Analyze Results
-        if: github.event_name == 'pull_request' && steps.pr-test.outcome != 'skipped'
+      - name: Analyze Test Results
+        if: steps.branch-validation.outputs.valid == 'valid'
         id: analyze-results
         run: python scripts/analyze_test_results.py
 
-      - name: Run PR Logic - Update README and Commit
-        if: github.event_name == 'pull_request' && steps.pr-test.outcome != 'skipped'
-        run: |
-          echo "📝 PR에 제출된 모든 문제에 대해 README 업데이트를 시도합니다."
-          python scripts/update_readme_batch.py
-
-          if ! git diff --quiet README.md; then
-            echo "README.md 변경사항을 커밋합니다."
-            # [수정] 커밋 작성자를 PR을 올린 사용자로 설정
-            git config --local user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
-            git config --local user.name "${{ github.event.pull_request.user.login }}"
-            git add README.md
-            git commit -m "Docs: Update README.md by PR #${{ github.event.pull_request.number }}"
-            git push origin ${{ github.event.pull_request.head.ref }}
-          else
-            echo "README.md에 변경사항이 없어 커밋하지 않습니다."
-          fi
-
-      - name: Run PR Logic - Post Comment on PR
-        if: github.event_name == 'pull_request' && steps.analyze-results.outcome == 'success'
+      - name: Post Test Results Comment
+        if: steps.branch-validation.outputs.valid == 'valid'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
+            if (!fs.existsSync('test_results_summary.json')) {
+              console.log('test_results_summary.json 파일이 없습니다.');
+              return;
+            }
             const results = JSON.parse(fs.readFileSync('test_results_summary.json', 'utf8'));
-            const { overall_success, passed_problems, partial_passed_problems, failed_problems, total_problems } = results;
+            const { passed_problems, partial_passed_problems, failed_problems, total_problems } = results;
+            const weekNumber = '${{ steps.branch-validation.outputs.week_number }}';
+            const branchUser = '${{ steps.branch-validation.outputs.branch_user }}';
             
-            let commentBody = `## 📊 테스트 결과 요약\n\n`;
+            let commentBody = `## 📊 테스트 결과 요약 (Week ${weekNumber} - ${branchUser})\n\n`;
             commentBody += `| 전체 | ✅ 성공 | ⚠️ 부분 성공 | ❌ 실패 |\n`;
             commentBody += `|:---:|:---:|:---:|:---:|\n`;
             commentBody += `| ${total_problems}개 | ${passed_problems}개 | ${partial_passed_problems}개 | ${failed_problems}개 |\n\n`;
+            commentBody += `✅ **이 PR의 모든 자동화 작업(README 업데이트, 승인)이 곧 완료됩니다.**`;
             
-            commentBody += `\n---\n🎉 **PR 제출이 확인되었습니다!** 테스트 결과와 상관없이 제출 현황이 README에 반영됩니다.`;
-
             await github.rest.issues.createComment({
-              issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
+              issue_number: context.issue.number,
               body: commentBody
             });
 
+      # =================================================================
+      # 3. Mattermost DM 알림 전송 (추가된 부분)
+      # =================================================================
       - name: Send Mattermost DM Notification
-        if: github.event_name == 'pull_request' && always() && steps.analyze-results.outcome != 'skipped'
+        if: steps.branch-validation.outputs.valid == 'valid' && steps.analyze-results.outcome == 'success'
         env:
-          PERSONAL_WEBHOOK_URL: ${{ secrets[format('{0}_MATTERMOST_URL', github.event.pull_request.user.login)] }}
+          PERSONAL_WEBHOOK_URL: ${{ secrets[format('{0}_MATTERMOST_URL', steps.branch-validation.outputs.branch_user)] }}
+          WEEK_NUMBER: ${{ steps.branch-validation.outputs.week_number }}
+          BRANCH_USER: ${{ steps.branch-validation.outputs.branch_user }}
+          # analyze-results 스텝의 출력을 사용합니다.
+          # analyze_test_results.py 스크립트가 GITHUB_OUTPUT으로 'overall_result=PASS' 또는 'overall_result=FAIL'을 출력해야 합니다.
+          OVERALL_RESULT: ${{ steps.analyze-results.outputs.overall_result }}
         run: |
-          if [ "${{ steps.analyze-results.outputs.overall_result }}" = "PASS" ]; then
-            echo "✅ 테스트 성공! 성공 알림을 전송합니다."
-            python scripts/send_success_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}" "$PERSONAL_WEBHOOK_URL"
+          if [ -n "$PERSONAL_WEBHOOK_URL" ]; then
+            if [ "$OVERALL_RESULT" = "PASS" ]; then
+              echo "✅ Week $WEEK_NUMBER - $BRANCH_USER님 테스트 성공! 성공 알림을 전송합니다."
+              python scripts/send_success_notification.py "${{ github.event.pull_request.html_url }}" "$BRANCH_USER" "$PERSONAL_WEBHOOK_URL" || echo "알림 전송 실패"
+            else
+              echo "❌ Week $WEEK_NUMBER - $BRANCH_USER님 테스트 실패! 실패 알림을 전송합니다."
+              python scripts/send_failure_notification.py "${{ github.event.pull_request.html_url }}" "$BRANCH_USER" "$PERSONAL_WEBHOOK_URL" || echo "알림 전송 실패"
+            fi
           else
-            echo "❌ 테스트 실패! 실패 알림을 전송합니다."
-            python scripts/send_failure_notification.py "${{ github.event.pull_request.html_url }}" "${{ github.event.pull_request.user.login }}" "$PERSONAL_WEBHOOK_URL"
+            echo "⚠️ $BRANCH_USER님의 Mattermost 웹훅 URL이 설정되지 않았습니다."
           fi
 
       # =================================================================
-      #  주간 실행 로직 (기존과 동일)
+      # 4. 분석 결과물을 Artifact로 임시 저장
       # =================================================================
-      - name: Run Weekly Logic - Reset README for New Week
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: |
-          echo "📅 새로운 주차를 위해 README를 초기화합니다."
-          python scripts/weekly_reset.py --force
+      - name: Upload analysis file as artifact
+        if: steps.branch-validation.outputs.valid == 'valid'
+        uses: actions/upload-artifact@v4
+        with:
+          name: problem-info-artifact
+          path: problems_info.json
+          retention-days: 1
 
-      - name: Run Weekly Logic - Commit and Push to main
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      # =================================================================
+      # 5. 원본 저장소 체크아웃 및 README 업데이트
+      # =================================================================
+      - name: Checkout Base Repo for README update
+        if: steps.branch-validation.outputs.valid == 'valid'
+        uses: actions/checkout@v4
+        with:
+          ref: 'main'
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download analysis file artifact
+        if: steps.branch-validation.outputs.valid == 'valid'
+        uses: actions/download-artifact@v4
+        with:
+          name: problem-info-artifact
+
+      - name: Update README.md file
+        if: steps.branch-validation.outputs.valid == 'valid'
+        env:
+          WEEK_NUMBER: ${{ steps.branch-validation.outputs.week_number }}
+          BRANCH_USER: ${{ steps.branch-validation.outputs.branch_user }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action Bot"
-          if ! git diff --quiet README.md; then
-            echo "README.md 변경사항을 main 브랜치에 커밋합니다."
-            git add README.md
-            git commit -m "chore: 주간 README 초기화"
-            git push origin main
+          if [ -f "problems_info.json" ] && [ -s "problems_info.json" ] && [ "$(cat problems_info.json)" != "[]" ]; then
+            echo "📝 README.md 업데이트를 시작합니다."
+            python scripts/update_readme_batch.py
           else
-            echo "README.md에 변경사항이 없어 커밋하지 않습니다."
+            echo "⚠️ README 업데이트에 필요한 정보가 없어 넘어갑니다."
           fi
+
+      # =================================================================
+      # 6. README 변경사항 커밋 및 푸시
+      # =================================================================
+      - name: Commit and Push README.md
+        if: steps.branch-validation.outputs.valid == 'valid'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: Update README for week-${{ steps.branch-validation.outputs.week_number }} by ${{ steps.branch-validation.outputs.branch_user }} (PR #${{ github.event.pull_request.number }})"
+          branch: main
+          commit_user_name: GitHub Action Bot
+          commit_user_email: action@github.com
+          file_pattern: README.md
+
+      # =================================================================
+      # 7. 모든 작업 완료 후 PR 자동 승인
+      # =================================================================
+      - name: Auto-approve the PR
+        if: steps.branch-validation.outputs.valid == 'valid'
+        uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          review-message: "✅ 자동화된 테스트 및 README 업데이트가 모두 완료되어 자동으로 승인되었습니다."

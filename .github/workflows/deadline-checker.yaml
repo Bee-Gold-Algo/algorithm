@@ -1,30 +1,28 @@
 name: Algorithm Study Deadline Checker
-
 on:
   schedule:
-    - cron: "0 0 * * 5" # 금요일 오전 9시 KST
-    - cron: "0 0 * * 0" # 일요일 오전 9시 KST
-    - cron: "0 12 * * 0" # 일요일 오후 9시 KST
+    - cron: "0 0 * * 5" # 금요일 오전 9시 KST (UTC 기준 금요일 00:00)
+    - cron: "0 0 * * 0" # 일요일 오전 9시 KST (UTC 기준 일요일 00:00)
+    - cron: "0 12 * * 0" # 일요일 오후 9시 KST (UTC 기준 일요일 12:00)
   workflow_dispatch:
 
 jobs:
   check-deadline:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-
+      - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.9"
-
       - name: Install dependencies
         run: |
           pip install requests pytz
-
       - name: Run deadline checker
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           YEOMIN4242_MATTERMOST_URL: ${{ secrets.YEOMIN4242_MATTERMOST_URL }}
           WANGHORENG_MATTERMOST_URL: ${{ secrets.WANGHORENG_MATTERMOST_URL }}
+          SWKOOO_MATTERMOST_URL: ${{ secrets.SWKOOO_MATTERMOST_URL }}
+          WHEREISMYSEJONG_MATTERMOST_URL: ${{ secrets.WHEREISMYSEJONG_MATTERMOST_URL }}
         run: python scripts/deadline_checker.py
