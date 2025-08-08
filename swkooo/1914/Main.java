@@ -37,7 +37,7 @@ public class Main {
 		if (repeat == 1) {
 			return n;
 		}
-		// 재귀조건
+		// 재귀조건 
 		return n.multiply(Power(n, repeat - 1));
 
 	}
