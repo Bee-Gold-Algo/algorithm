@@ -24,7 +24,7 @@ public class Main {
 			System.out.println(from + " " + to);
 		}
 		// 재귀조건
-		else {
+		else { 
 			hanoi(n - 1, from, via, to); // n-1개를 경유지로
 			System.out.println(from + " " + to); // 가장 큰 원판 이동
 			hanoi(n - 1, via, to, from); // n-1개를 목적지로
