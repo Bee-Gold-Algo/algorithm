@@ -3,7 +3,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 
 public class Main {
-	//방향구하기 (상, 우, 하, 좌)
+	//방향구하기 (상, 우상, 우, 우하, 하, 좌하, 좌, 좌상)
 	static final int[] dr = {-1, 0, 1, 0};
 	static final int[] dc = {0, 1, 0, -1};
 
@@ -23,6 +23,7 @@ public class Main {
 		//찾을 값의 인덱스 저장
 		int sr = 0;
 		int sc = 0;
+		if (val == search) { sr = r+1; sc = c+1; }
 		
 		
 		int step = 1;
