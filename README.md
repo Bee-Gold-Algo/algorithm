@@ -14,6 +14,7 @@
 | itwin25 |  |  |  |  | 1158 | 2309, 2564, 13300 | 2491 |
 | swkooo |  |  |  |  |  | 1003, 1244, 1764 |  |
 | wanghoreng |  |  |  |  |  | 2491, 2563, 2628 |  |
+| yeomin4242 |  |  |  |  |  |  | 2628, 15649, 15650... |
 ## 🤖 자동화 시스템 소개
 
 ### 🔧 주요 기능
@@ -84,4 +85,4 @@ MATTERMOST_WEBHOOK_URL=your_default_channel_webhook  # 기본 채널용
 - 버그 리포트나 개선 제안 환영합니다!
 
 ---
-*Auto-updated by GitHub Actions 🤖 (Weekly Reset)*
+*Auto-updated by GitHub Actions 🤖 (PR 브랜치에서 main 브랜치 데이터 반영)*
