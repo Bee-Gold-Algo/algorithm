@@ -2,6 +2,7 @@
 """
 scripts/deadline_checker.py
 마감일을 체크하고 개인별 Mattermost로 알림을 보냅니다.
+해당 주차(월요일~일요일)에 커밋된 문제만 카운트합니다.
 """
 
 import os
@@ -11,6 +12,22 @@ import subprocess
 from datetime import datetime, timedelta
 import pytz
 import re
+
+
+def get_current_week_range():
+    """현재 주차의 시작(월요일 00:00)과 끝(일요일 23:59) 시간 반환 (KST 기준)"""
+    kst = pytz.timezone("Asia/Seoul")
+    now = datetime.now(kst)
+    
+    # 현재 주의 월요일 00:00:00 구하기
+    days_since_monday = now.weekday()  # 0=월요일, 6=일요일
+    week_start = now - timedelta(days=days_since_monday)
+    week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # 현재 주의 일요일 23:59:59 구하기
+    week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+    
+    return week_start, week_end
 
 
 def get_repository_info():
@@ -90,8 +107,8 @@ def get_participants_from_directory():
         return []
 
 
-def get_weekly_problem_count(username):
-    """특정 사용자의 일주일간 해결한 문제 수 계산"""
+def get_weekly_problem_count_by_commit_time(username):
+    """GitHub API를 사용하여 이번 주에 커밋된 문제 수 계산"""
     try:
         token = os.getenv("GITHUB_TOKEN")
         repo = os.getenv("GITHUB_REPOSITORY")
@@ -104,43 +121,165 @@ def get_weekly_problem_count(username):
             "Accept": "application/vnd.github.v3+json",
         }
 
-        # 일주일 전 날짜
-        week_ago = datetime.now() - timedelta(days=7)
-        since_date = week_ago.isoformat()
+        # 이번 주 범위 계산 (월요일 00:00 ~ 일요일 23:59)
+        week_start, week_end = get_current_week_range()
+        
+        print(f"📅 {username} 이번 주 범위: {week_start.strftime('%Y-%m-%d %H:%M')} ~ {week_end.strftime('%Y-%m-%d %H:%M')} KST")
 
-        # 최근 병합된 PR 조회 (해당 사용자만)
-        pr_url = f"https://api.github.com/repos/{repo}/pulls?state=closed&since={since_date}&per_page=100"
-        response = requests.get(pr_url, headers=headers)
+        # 1. 해당 사용자 디렉토리의 모든 Java 파일 가져오기
+        contents_url = f"https://api.github.com/repos/{repo}/contents/{username}"
+        response = requests.get(contents_url, headers=headers)
+        
+        if response.status_code != 200:
+            print(f"📁 {username} 디렉토리를 찾을 수 없습니다.")
+            return 0
 
         problem_count = 0
-        if response.status_code == 200:
-            prs = response.json()
-
-            for pr in prs:
-                # 해당 사용자가 작성하고 병합된 PR만 확인
-                if pr.get("merged_at") and pr["user"]["login"] == username:
-                    # PR의 파일 변경사항 조회
-                    files_url = pr["url"] + "/files"
-                    files_response = requests.get(files_url, headers=headers)
-
-                    if files_response.status_code == 200:
-                        files = files_response.json()
-
-                        # 해당 사용자 디렉토리의 문제 파일들 카운트
-                        for file in files:
-                            file_path = file["filename"]
-                            # username/문제번호/Main.java 패턴 확인
-                            if file_path.startswith(
-                                f"{username}/"
-                            ) and file_path.endswith("/Main.java"):
-                                if file["status"] in ["added", "modified"]:
+        processed_problems = set()  # 중복 방지
+        solved_problems = []  # 해결한 문제 번호 저장
+        
+        contents = response.json()
+        for item in contents:
+            if item["type"] == "dir":  # 문제 번호 디렉토리
+                problem_dir = item["name"]
+                
+                # 문제 번호인지 확인 (숫자로만 구성)
+                if not problem_dir.isdigit():
+                    continue
+                
+                # Main.java 파일 경로
+                main_java_path = f"{username}/{problem_dir}/Main.java"
+                
+                # 2. 해당 파일의 커밋 히스토리 조회 (이번 주 범위)
+                commits_url = f"https://api.github.com/repos/{repo}/commits"
+                commits_params = {
+                    "path": main_java_path,
+                    "since": week_start.isoformat(),
+                    "until": week_end.isoformat(),
+                    "per_page": 100
+                }
+                
+                commits_response = requests.get(commits_url, headers=headers, params=commits_params)
+                
+                if commits_response.status_code == 200:
+                    commits = commits_response.json()
+                    
+                    # 3. 이번 주에 커밋이 있는지 확인
+                    for commit in commits:
+                        commit_date_str = commit["commit"]["author"]["date"]
+                        commit_date = datetime.fromisoformat(commit_date_str.replace('Z', '+00:00'))
+                        commit_date_kst = commit_date.astimezone(pytz.timezone("Asia/Seoul"))
+                        
+                        # 커밋 작성자가 해당 사용자인지 확인
+                        commit_author = commit.get("author", {})
+                        if commit_author and commit_author.get("login") == username:
+                            # 이번 주 범위 내 커밋인지 확인
+                            if week_start <= commit_date_kst <= week_end:
+                                if problem_dir not in processed_problems:
+                                    processed_problems.add(problem_dir)
+                                    solved_problems.append(problem_dir)
                                     problem_count += 1
-
+                                    print(f"  ✅ 문제 {problem_dir}: {commit_date_kst.strftime('%Y-%m-%d %H:%M')} KST")
+                                break  # 해당 문제의 첫 번째 유효 커밋만 카운트
+                                
+        solved_problems.sort(key=int)  # 문제 번호 순으로 정렬
+        print(f"📊 {username}: 이번 주 해결한 문제 {problem_count}개 - {solved_problems}")
         return problem_count
 
     except Exception as e:
-        print(f"주간 문제 수 계산 실패 ({username}): {e}")
+        print(f"GitHub API 기반 주간 문제 수 계산 실패 ({username}): {e}")
+        import traceback
+        traceback.print_exc()
         return 0
+
+
+def get_weekly_problem_count_alternative(username):
+    """Git 로그를 사용하여 이번 주에 커밋된 문제 수 계산"""
+    try:
+        # 이번 주 범위 계산 (월요일 00:00 ~ 일요일 23:59)
+        week_start, week_end = get_current_week_range()
+        
+        print(f"📅 {username} Git 로그 검색 범위: {week_start.strftime('%Y-%m-%d %H:%M')} ~ {week_end.strftime('%Y-%m-%d %H:%M')} KST")
+        
+        # Git 로그 명령어로 이번 주 커밋 조회
+        git_command = [
+            "git", "log",
+            "--since", week_start.strftime("%Y-%m-%d %H:%M:%S"),
+            "--until", week_end.strftime("%Y-%m-%d %H:%M:%S"),
+            "--author", username,
+            "--name-only",
+            "--pretty=format:%H|%ad|%an",
+            "--date=iso",
+            f"-- {username}/*/Main.java"
+        ]
+        
+        result = subprocess.run(git_command, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"Git 명령어 실행 실패: {result.stderr}")
+            return 0
+        
+        # 커밋 로그 파싱
+        lines = result.stdout.strip().split('\n')
+        processed_problems = set()
+        solved_problems = []
+        
+        current_commit = None
+        for line in lines:
+            if '|' in line:  # 커밋 정보 라인
+                parts = line.split('|')
+                if len(parts) >= 3:
+                    commit_hash = parts[0]
+                    commit_date_str = parts[1]
+                    author_name = parts[2]
+                    current_commit = commit_hash
+                    
+                    # 커밋 시간이 이번 주 범위 내인지 다시 한번 확인
+                    try:
+                        commit_date = datetime.fromisoformat(commit_date_str.replace('Z', '+00:00'))
+                        commit_date_kst = commit_date.astimezone(pytz.timezone("Asia/Seoul"))
+                        if not (week_start <= commit_date_kst <= week_end):
+                            current_commit = None
+                            continue
+                        print(f"  📅 유효한 커밋: {commit_date_kst.strftime('%Y-%m-%d %H:%M')} KST")
+                    except:
+                        current_commit = None
+                        continue
+                        
+            elif line.strip() and current_commit:  # 파일 경로 라인
+                # username/문제번호/Main.java 패턴 확인
+                if line.startswith(f"{username}/") and line.endswith("/Main.java"):
+                    path_parts = line.split('/')
+                    if len(path_parts) >= 3:
+                        problem_dir = path_parts[1]
+                        if problem_dir.isdigit() and problem_dir not in processed_problems:
+                            processed_problems.add(problem_dir)
+                            solved_problems.append(problem_dir)
+        
+        solved_problems.sort(key=int)  # 문제 번호 순으로 정렬
+        problem_count = len(processed_problems)
+        print(f"📊 {username}: 이번 주 해결한 문제 {problem_count}개 - {solved_problems}")
+        return problem_count
+        
+    except Exception as e:
+        print(f"Git 로그 기반 주간 문제 수 계산 실패 ({username}): {e}")
+        return 0
+
+
+def get_weekly_problem_count(username):
+    """사용자의 이번 주 해결한 문제 수 계산 (커밋 시간 기준)"""
+    print(f"\n🔍 {username}의 이번 주 문제 수 계산 중...")
+    
+    # 먼저 GitHub API 방식 시도
+    count_api = get_weekly_problem_count_by_commit_time(username)
+    
+    # GitHub API가 실패하거나 0개면 Git 로그 방식 시도
+    if count_api == 0:
+        print(f"🔄 {username}: GitHub API 방식에서 0개 또는 실패, Git 로그 방식으로 재시도")
+        count_git = get_weekly_problem_count_alternative(username)
+        return count_git
+    
+    return count_api
 
 
 def send_personal_notification(username, message):
@@ -177,6 +316,7 @@ def create_personal_reminder_message(username, problem_count, reminder_type, rep
     """개인별 알림 메시지 생성"""
     kst = pytz.timezone("Asia/Seoul")
     now = datetime.now(kst)
+    week_start, week_end = get_current_week_range()
 
     repo_name = (
         repo_info.get("name", "Algorithm Study") if repo_info else "Algorithm Study"
@@ -208,9 +348,9 @@ def create_personal_reminder_message(username, problem_count, reminder_type, rep
 🕐 **알림 시간**: {time_context} ({now.strftime('%H:%M')})
 🏠 **스터디**: [{repo_name}]({repo_url})
 
-📊 **이번 주 현황**:
+📊 **이번 주 현황** ({week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')}):
 - **해결한 문제**: {problem_count}개
-- **목표**: 5개 이상
+- **목표**: 5개 이상  
 - **부족한 문제**: {max(0, 5 - problem_count)}개
 
 """
@@ -262,11 +402,13 @@ def create_personal_reminder_message(username, problem_count, reminder_type, rep
 3. 자동 테스트 후 병합
 
 💡 **참고**:
+- 이번 주 (월요일 00:00 ~ 일요일 23:59) 커밋만 카운트됩니다
 - 한 번에 여러 문제를 PR로 제출해도 됩니다
 - 부분 점수도 인정되니 도전해보세요!
 - 궁금한 점은 언제든 문의해주세요
 
 *이 메시지는 자동으로 전송되었습니다. ({time_context} 알림)*
+*문제 수는 이번 주 ({week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')}) 커밋 시간을 기준으로 계산됩니다.*
 """
 
     return message
@@ -287,80 +429,83 @@ def send_summary_notification(participants_status, reminder_type, repo_info):
             print(f"⚠️ {username}의 개인 webhook이 설정되지 않음 ({webhook_key})")
             continue
 
-    kst = pytz.timezone("Asia/Seoul")
-    now = datetime.now(kst)
+        kst = pytz.timezone("Asia/Seoul")
+        now = datetime.now(kst)
+        week_start, week_end = get_current_week_range()
 
-    repo_name = (
-        repo_info.get("name", "Algorithm Study") if repo_info else "Algorithm Study"
-    )
+        repo_name = (
+            repo_info.get("name", "Algorithm Study") if repo_info else "Algorithm Study"
+        )
 
-    # 통계 계산
-    total_participants = len(participants_status)
-    achieved_goal = len([p for p in participants_status if p["problem_count"] >= 5])
-    need_reminder = len([p for p in participants_status if p["problem_count"] < 5])
+        # 통계 계산
+        total_participants = len(participants_status)
+        achieved_goal = len([p for p in participants_status if p["problem_count"] >= 5])
+        need_reminder = len([p for p in participants_status if p["problem_count"] < 5])
 
-    # 알림 타입별 제목
-    if reminder_type == "friday_morning":
-        title = "📅 **주간 중간 체크 요약** (금요일 오전)"
-    elif reminder_type == "sunday_morning":
-        title = "⏰ **마감일 당일 요약** (일요일 오전)"
-    elif reminder_type == "sunday_evening":
-        title = "🚨 **마감 임박 요약** (일요일 저녁)"
-    else:
-        title = "📊 **스터디 현황 요약**"
+        # 알림 타입별 제목
+        if reminder_type == "friday_morning":
+            title = "📅 **주간 중간 체크 요약** (금요일 오전)"
+        elif reminder_type == "sunday_morning":
+            title = "⏰ **마감일 당일 요약** (일요일 오전)"
+        elif reminder_type == "sunday_evening":
+            title = "🚨 **마감 임박 요약** (일요일 저녁)"
+        else:
+            title = "📊 **스터디 현황 요약**"
 
-    message = f"""
+        message = f"""
 {title}
 
 🏠 **스터디**: {repo_name}
 🕐 **체크 시간**: {now.strftime('%Y-%m-%d %H:%M')} KST
+📅 **이번 주**: {week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')}
 
-📊 **전체 현황**:
+📊 **전체 현황** (이번 주 커밋 기준):
 - **전체 참가자**: {total_participants}명
 - **목표 달성**: {achieved_goal}명 (5개 이상)
 - **알림 대상**: {need_reminder}명 (5개 미만)
 
 """
 
-    if participants_status:
-        message += "👥 **참가자별 현황**:\n"
-        for participant in participants_status:
-            status_emoji = "✅" if participant["problem_count"] >= 5 else "⚠️"
-            message += f"- {status_emoji} **{participant['username']}**: {participant['problem_count']}문제\n"
+        if participants_status:
+            message += "👥 **참가자별 현황**:\n"
+            for participant in participants_status:
+                status_emoji = "✅" if participant["problem_count"] >= 5 else "⚠️"
+                message += f"- {status_emoji} **{participant['username']}**: {participant['problem_count']}문제\n"
 
-        message += "\n"
+            message += "\n"
 
-    if need_reminder > 0:
-        need_reminder_users = [
-            p["username"] for p in participants_status if p["problem_count"] < 5
-        ]
-        message += f"🔔 **개인 알림 발송 대상**: {', '.join(need_reminder_users)}\n\n"
+        if need_reminder > 0:
+            need_reminder_users = [
+                p["username"] for p in participants_status if p["problem_count"] < 5
+            ]
+            message += f"🔔 **개인 알림 발송 대상**: {', '.join(need_reminder_users)}\n\n"
 
-    message += """
+        message += f"""
 ---
 💡 **참고사항**:
 - 마감: 매주 일요일 23:59 KST
 - 목표: 주당 5문제 이상 해결
+- 계산 기준: 이번 주 ({week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')}) 커밋 시간
 
 *이 메시지는 자동으로 전송되었습니다.*
 """
 
-    payload = {
-        "text": message,
-        "username": "Algorithm Study Bot",
-        "icon_emoji": ":chart_with_upwards_trend:",
-    }
+        payload = {
+            "text": message,
+            "username": "Algorithm Study Bot",
+            "icon_emoji": ":chart_with_upwards_trend:",
+        }
 
-    try:
-        response = requests.post(webhook_url, json=payload)
-        if response.status_code == 200:
-            success_count += 1
-            print(f"✅ {username}에게 요약 알림 전송 성공")
-        else:
-            print(f"❌ {username}에게 요약 알림 전송 실패: {response.status_code}")
+        try:
+            response = requests.post(webhook_url, json=payload)
+            if response.status_code == 200:
+                success_count += 1
+                print(f"✅ {username}에게 요약 알림 전송 성공")
+            else:
+                print(f"❌ {username}에게 요약 알림 전송 실패: {response.status_code}")
 
-    except Exception as e:
-        print(f"❌ {username}에게 요약 알림 전송 예외: {e}")
+        except Exception as e:
+            print(f"❌ {username}에게 요약 알림 전송 예외: {e}")
 
     print(f"✅ 전체 요약 알림 전송 완료: {success_count}/{total_participants}명")
     return success_count > 0
@@ -369,9 +514,13 @@ def send_summary_notification(participants_status, reminder_type, repo_info):
 def main():
     """메인 실행 함수"""
     is_debug_mode = os.getenv("DEBUG_MODE") == "true"
-    print(
-        f"🤖 주간 문제 해결 현황 체크 및 개인 알림 시작... {'(디버깅 모드)' if is_debug_mode else ''}"
-    )
+    kst = pytz.timezone("Asia/Seoul")
+    now = datetime.now(kst)
+    week_start, week_end = get_current_week_range()
+    
+    print(f"🤖 주간 문제 해결 현황 체크 및 개인 알림 시작... {'(디버깅 모드)' if is_debug_mode else ''}")
+    print(f"📅 이번 주 범위: {week_start.strftime('%Y-%m-%d %H:%M')} ~ {week_end.strftime('%Y-%m-%d %H:%M')} KST")
+    print(f"🕐 현재 시간: {now.strftime('%Y-%m-%d %H:%M')} KST")
 
     # 1. 레포지토리 정보 가져오기
     repo_info = get_repository_info()
@@ -394,18 +543,25 @@ def main():
     print(f"👥 참가자 수: {len(participants)}명")
     print(f"👥 참가자: {', '.join(participants)}")
 
-    # 4. 각 참가자별 주간 문제 해결 수 체크
+    # 4. 각 참가자별 이번 주 문제 해결 수 체크
     participants_status = []
     for username in participants:
         problem_count = get_weekly_problem_count(username)
         participants_status.append(
             {"username": username, "problem_count": problem_count}
         )
-        print(f"📊 {username}: {problem_count}문제")
+
+    # 결과 요약 출력
+    print(f"\n📊 이번 주 ({week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')}) 결과 요약:")
+    for participant in participants_status:
+        username = participant["username"]
+        count = participant["problem_count"]
+        status = "✅" if count >= 5 else "⚠️"
+        print(f"  {status} {username}: {count}문제")
 
     # 5. 5개 미만인 사용자들에게 개인 알림 발송
     need_reminder_users = [p for p in participants_status if p["problem_count"] < 5]
-    print(f"🔔 개인 알림 필요: {len(need_reminder_users)}명")
+    print(f"\n🔔 개인 알림 필요: {len(need_reminder_users)}명")
 
     if is_debug_mode and reminder_type == "debug_all":
         # 디버깅 모드: 세 가지 메시지 타입을 모두 테스트
@@ -437,7 +593,6 @@ def main():
 
                 # 메시지 간 간격 (API 제한 방지)
                 import time
-
                 time.sleep(2)
 
         print(f"✅ 디버깅 모드 알림 성공: {total_success}/{total_sent}건")
@@ -446,7 +601,8 @@ def main():
         debug_summary_message = f"""
 🧪 **디버깅 모드 실행 완료**
 
-🕐 **실행 시간**: {datetime.now(pytz.timezone('Asia/Seoul')).strftime('%Y-%m-%d %H:%M:%S')} KST
+🕐 **실행 시간**: {now.strftime('%Y-%m-%d %H:%M:%S')} KST
+📅 **이번 주**: {week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')}
 📊 **테스트 결과**: {len(message_types)}가지 메시지 타입 × {len(need_reminder_users)}명 = {total_sent}건 발송
 
 📝 **테스트된 메시지 타입**:
@@ -455,6 +611,7 @@ def main():
 - 일요일 저녁: 마감 임박 긴급 알림
 
 🎯 **알림 대상**: {', '.join([p['username'] for p in need_reminder_users])} ({len(need_reminder_users)}명)
+📅 **계산 기준**: 이번 주 커밋 시간 ({week_start.strftime('%m/%d')} ~ {week_end.strftime('%m/%d')})
 
 ---
 *디버깅 모드에서 모든 메시지 타입을 테스트했습니다.*
