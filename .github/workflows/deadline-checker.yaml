@@ -27,4 +27,5 @@ jobs:
           WHEREISMYSEJONG_MATTERMOST_URL: ${{ secrets.WHEREISMYSEJONG_MATTERMOST_URL }}
           DANHYE_MATTERMOST_URL: ${{ secrets.DANHYE_MATTERMOST_URL }}
           BRIGHTK123_MATTERMOST_URL: ${{ secrets.BRIGHTK123_MATTERMOST_URL }}
+          ITWIN25_MATTERMOST_URL: ${{ secrets.ITWIN25_MATTERMOST_URL }}
         run: python scripts/deadline_checker.py

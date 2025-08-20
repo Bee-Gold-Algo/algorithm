@@ -2,6 +2,7 @@
 """
 scripts/extract_pr_info.py
 PR에서 변경된 파일들을 분석하여 문제 정보를 추출
+각 파일의 실제 커밋 날짜를 포함하여 처리
 """
 
 import json
@@ -10,6 +11,7 @@ import re
 import sys
 import requests
 from pathlib import Path
+from datetime import datetime
 
 
 def get_pr_changed_files():
@@ -56,6 +58,63 @@ def get_pr_changed_files():
     except Exception as e:
         print(f"❌ PR 파일 목록 가져오기 실패: {e}")
         return []
+
+
+def get_file_commit_dates(files):
+    """각 파일의 최신 커밋 날짜를 가져옵니다."""
+    pr_number = os.environ.get("PR_NUMBER")
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    token = os.environ.get("GITHUB_TOKEN")
+
+    if not all([pr_number, repo, token]):
+        print("❌ 필요한 환경변수가 설정되지 않았습니다.")
+        return {}
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
+    # PR의 커밋 목록 가져오기
+    commits_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/commits"
+    
+    try:
+        response = requests.get(commits_url, headers=headers, timeout=30)
+        response.raise_for_status()
+        commits = response.json()
+
+        file_dates = {}
+        
+        # 각 커밋을 순회하면서 파일별 최신 날짜 찾기
+        for commit in commits:
+            commit_date = commit["commit"]["author"]["date"]
+            commit_date_parsed = datetime.fromisoformat(commit_date.replace('Z', '+00:00'))
+            commit_date_str = commit_date_parsed.strftime("%Y-%m-%d")
+            
+            commit_sha = commit["sha"]
+            
+            # 해당 커밋에서 변경된 파일들 가져오기
+            commit_url = f"https://api.github.com/repos/{repo}/commits/{commit_sha}"
+            commit_response = requests.get(commit_url, headers=headers, timeout=30)
+            
+            if commit_response.status_code == 200:
+                commit_data = commit_response.json()
+                commit_files = commit_data.get("files", [])
+                
+                for file_info in commit_files:
+                    filename = file_info["filename"]
+                    # 현재 PR에서 변경된 파일만 처리
+                    if filename in [f["filename"] for f in files]:
+                        # 파일별로 가장 최신 날짜만 저장 (나중에 커밋된 것이 최신)
+                        if filename not in file_dates or commit_date_str >= file_dates[filename]:
+                            file_dates[filename] = commit_date_str
+                            print(f"📅 {filename} -> {commit_date_str}")
+
+        return file_dates
+
+    except Exception as e:
+        print(f"❌ 커밋 날짜 가져오기 실패: {e}")
+        return {}
 
 
 def extract_problem_info_from_path(filepath):
@@ -159,7 +218,7 @@ def validate_problem_files(problems):
             if file_size > 50:  # 최소 50바이트
                 valid_problems.append(problem)
                 print(
-                    f"✅ 유효한 문제 파일: {filepath} (문제 {problem['problem_id']}, 작성자: {problem['author']})"
+                    f"✅ 유효한 문제 파일: {filepath} (문제 {problem['problem_id']}, 작성자: {problem['author']}, 날짜: {problem.get('submission_date', 'N/A')})"
                 )
             else:
                 print(f"⚠️ 파일이 너무 작음: {filepath}")
@@ -167,6 +226,28 @@ def validate_problem_files(problems):
             print(f"❌ 파일이 존재하지 않음: {filepath}")
 
     return valid_problems
+
+
+def remove_duplicate_problems(problems):
+    """같은 문제 ID와 작성자를 가진 중복 문제들을 제거합니다.
+    가장 최신 날짜의 제출만 유지합니다."""
+    
+    problem_map = {}
+    
+    for problem in problems:
+        key = (problem["problem_id"], problem["author"])
+        submission_date = problem.get("submission_date", "1970-01-01")
+        
+        if key not in problem_map or submission_date > problem_map[key]["submission_date"]:
+            problem_map[key] = problem
+    
+    unique_problems = list(problem_map.values())
+    
+    if len(unique_problems) < len(problems):
+        removed_count = len(problems) - len(unique_problems)
+        print(f"🔄 중복 제거: {removed_count}개 중복 제출 제거됨")
+    
+    return unique_problems
 
 
 def main():
@@ -181,6 +262,10 @@ def main():
         sys.exit(1)
 
     print(f"📋 총 {len(changed_files)}개 파일이 변경됨")
+
+    # 각 파일의 커밋 날짜 가져오기
+    print("🕐 각 파일의 커밋 날짜를 가져오는 중...")
+    file_commit_dates = get_file_commit_dates(changed_files)
 
     # PR 작성자 정보 가져오기
     pr_author = get_pr_author()
@@ -198,9 +283,14 @@ def main():
             problem_info["file_status"] = file_info["status"]
             problem_info["additions"] = file_info["additions"]
             problem_info["deletions"] = file_info["deletions"]
+            
+            # 커밋 날짜 추가 (없으면 현재 날짜 사용)
+            submission_date = file_commit_dates.get(filepath, datetime.now().strftime("%Y-%m-%d"))
+            problem_info["submission_date"] = submission_date
+            
             all_problems.append(problem_info)
             print(
-                f"  ✅ 문제 {problem_info['problem_id']} 발견 (작성자: {problem_info['author']})"
+                f"  ✅ 문제 {problem_info['problem_id']} 발견 (작성자: {problem_info['author']}, 날짜: {submission_date})"
             )
         else:
             print(f"  ⚠️ 문제 정보를 추출할 수 없음")
@@ -213,8 +303,11 @@ def main():
         filtered_problems = all_problems
         print(f"⚠️ PR 작성자 정보 없음, 모든 문제 처리: {len(filtered_problems)}개")
 
+    # 중복 문제 제거 (같은 문제의 최신 제출만 유지)
+    unique_problems = remove_duplicate_problems(filtered_problems)
+
     # 파일 존재 여부 확인
-    valid_problems = validate_problem_files(filtered_problems)
+    valid_problems = validate_problem_files(unique_problems)
 
     if not valid_problems:
         print("❌ 유효한 문제 파일이 없습니다.")
@@ -237,13 +330,14 @@ def main():
     print(f"전체 변경 파일: {len(changed_files)}개")
     print(f"추출된 문제: {len(all_problems)}개")
     print(f"필터링된 문제: {len(filtered_problems)}개")
+    print(f"중복 제거 후: {len(unique_problems)}개")
     print(f"유효한 문제: {len(valid_problems)}개")
 
     if valid_problems:
         print(f"\n📝 처리할 문제 목록:")
         for problem in valid_problems:
             print(
-                f"  - 문제 {problem['problem_id']} ({problem['author']}) - {problem['code_file']}"
+                f"  - 문제 {problem['problem_id']} ({problem['author']}) - {problem['code_file']} - {problem['submission_date']}"
             )
 
     # GitHub Actions 출력 설정

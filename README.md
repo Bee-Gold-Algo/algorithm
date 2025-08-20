@@ -40,7 +40,6 @@ Repository Settings → Secrets and variables → Actions에서 다음 설정:
 
 ```
 GEMINI_API_KEY=your_gemini_api_key
-MATTERMOST_WEBHOOK_URL=your_default_channel_webhook  # 기본 채널용
 본인깃허브아이디_MATTERMOST_URL=your_personal_webhook  # 개인 DM용 (필수)
 ```
 

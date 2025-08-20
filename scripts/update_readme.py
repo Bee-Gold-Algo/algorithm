@@ -88,8 +88,7 @@ Repository Settings → Secrets and variables → Actions에서 다음 설정:
 
 ```
 GEMINI_API_KEY=your_gemini_api_key
-MATTERMOST_WEBHOOK_URL=your_default_channel_webhook  # 기본 채널용
-본인깃허브아이디_MATTERMOST_URL=your_personal_webhook  # 개인 DM용 (필수)
+본인깃허브아이디_MATTERMOST_URL=your_personal_webhook  # 개인 DM용 (필수)
 ```
 
 **📱 개인 알림 설정**: 주간 5문제 미달 시 개인 DM 알림을 받으려면 반드시 개인 webhook URL을 설정하세요. 
@@ -98,15 +97,15 @@ MATTERMOST_WEBHOOK_URL=your_default_channel_webhook  # 기본 채널용
 ```
 본인깃허브아이디/
 ├── 1000/
-│   └── Main.java
+│   └── Main.java
 ├── 1001/
-│   └── Main.java
+│   └── Main.java
 └── 2557/
-    └── Main.java
+    └── Main.java
 ```
 
 #### 4. PR 제출 과정
-1. **브랜치 생성**: `git checkout -b week-N-<githubId>`  
+1. **브랜치 생성**: `git checkout -b week-N-<githubId>`  
 2. **코드 작성**: 위 구조대로 파일 배치
 3. **PR 생성**: main 브랜치로 Pull Request
 4. **자동 테스트**: GitHub Actions에서 자동 실행
@@ -115,7 +114,7 @@ MATTERMOST_WEBHOOK_URL=your_default_channel_webhook  # 기본 채널용
 
 ### 🎯 테스트 기준
 - **완전 성공**: 샘플 + 생성 테스트 모두 통과
-- **부분 성공**: 샘플 또는 생성 테스트 중 하나만 통과  
+- **부분 성공**: 샘플 또는 생성 테스트 중 하나만 통과  
 - **실패**: 모든 테스트 실패
 - **PR 승인**: 문제 정답 여부와 상관없이 모두 승인
 
@@ -191,11 +190,11 @@ def create_participant_table(participants, week_info):
 
     header = f"""| 참가자 | 월 | 화 | 수 | 목 | 금 | 토 | 일 |
 |--------|----|----|----|----|----|----|---|
-|        | {week_dates[0]} | {week_dates[1]} | {week_dates[2]} | {week_dates[3]} | {week_dates[4]} | {week_dates[5]} | {week_dates[6]} |"""
+|        | {week_dates[0]} | {week_dates[1]} | {week_dates[2]} | {week_dates[3]} | {week_dates[4]} | {week_dates[5]} | {week_dates[6]} |"""
 
     rows = []
     if not participants:
-        rows.append("| 아직_제출없음 |  |  |  |  |  |  |  |")
+        rows.append("| 아직_제출없음 |  |  |  |  |  |  |  |")
     else:
         weekdays = [
             "monday",
@@ -222,6 +221,27 @@ def create_participant_table(participants, week_info):
     return header + "\n" + "\n".join(rows)
 
 
+def remove_problem_from_all_days(participant_data, problem_id):
+    """참가자의 모든 요일에서 특정 문제를 제거합니다."""
+    weekdays = [
+        "monday",
+        "tuesday", 
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    ]
+    
+    removed_from_days = []
+    for day in weekdays:
+        if problem_id in participant_data[day]:
+            participant_data[day].remove(problem_id)
+            removed_from_days.append(day)
+    
+    return removed_from_days
+
+
 def update_footer(readme_content):
     """기존 푸터를 제거하고 새로운 푸터를 추가합니다."""
     # 기존 푸터 제거 (정규식 사용)
@@ -239,11 +259,20 @@ def update_footer(readme_content):
 
 def main():
     parser = argparse.ArgumentParser(description="README.md 업데이트")
-    parser.add_argument("--problem-id", required=True)
-    parser.add_argument("--author", required=True)
-    parser.add_argument("--submission-date", required=True)
-    parser.add_argument("--language", required=True)
+    parser.add_argument("--problem-id", required=True, help="문제 번호")
+    parser.add_argument("--author", required=True, help="제출자")
+    parser.add_argument("--submission-date", required=True, help="제출 날짜 (YYYY-MM-DD)")
+    parser.add_argument("--language", required=True, help="프로그래밍 언어")
     args = parser.parse_args()
+
+    try:
+        # 입력 검증
+        submission_date = datetime.strptime(args.submission_date, "%Y-%m-%d")
+        print(f"🔄 README 업데이트 시작: {args.author} - 문제 {args.problem_id} ({args.submission_date})")
+        
+    except ValueError:
+        print(f"❌ 잘못된 날짜 형식: {args.submission_date}. YYYY-MM-DD 형식이어야 합니다.")
+        sys.exit(1)
 
     readme_content = load_readme()
     current_week = get_week_info(args.submission_date)
@@ -262,6 +291,7 @@ def main():
         "saturday",
         "sunday",
     ][get_weekday_from_date(args.submission_date)]
+    
     participant_data = participants.get(
         args.author,
         {
@@ -277,28 +307,62 @@ def main():
             ]
         },
     )
+
+    # 중복 제거: 기존의 모든 날짜에서 이 문제를 제거
+    removed_from_days = remove_problem_from_all_days(participant_data, args.problem_id)
+    if removed_from_days:
+        print(f"  🔄 문제 {args.problem_id} 기존 제출 제거됨: {', '.join(removed_from_days)}")
+
+    # 새로운 날짜에 문제 추가
     if args.problem_id not in participant_data[weekday_name]:
         participant_data[weekday_name].append(args.problem_id)
+        print(f"  ✅ 문제 {args.problem_id}를 {weekday_name}에 추가")
+    else:
+        print(f"  ℹ️ 문제 {args.problem_id}가 이미 {weekday_name}에 존재함")
+
     participants[args.author] = participant_data
 
     # 새 테이블 생성
     new_table = create_participant_table(participants, current_week)
 
     # README 내용에서 테이블 부분만 교체
-    new_readme = re.sub(
-        r"(### 제출 현황\n\n)(.*?)(\n##|$)",
-        f"\\1{new_table}\\3",
-        readme_content,
-        flags=re.DOTALL,
-    )
+    # 주차 정보가 다르면 전체 README 재생성
+    week_pattern = rf"## 📅 {current_week['session_number']}회차 현황"
+    if not re.search(week_pattern, readme_content):
+        print(f"  🔄 새로운 주차({current_week['session_number']})로 README 전체 재생성")
+        static_info = create_static_info_section()
+        new_readme = f"""# 🚀 알고리즘 스터디
+
+## 📅 {current_week['session_number']}회차 현황
+**기간**: {current_week['monday']} ~ {current_week['sunday']}
+**마감**: {current_week['deadline']}
+
+### 제출 현황
+
+{new_table}
+{static_info}
+"""
+    else:
+        # 기존 주차의 테이블만 업데이트
+        new_readme = re.sub(
+            r"(### 제출 현황\n\n)(.*?)(\n##|$)",
+            f"\\1{new_table}\\3",
+            readme_content,
+            flags=re.DOTALL,
+        )
 
     # 푸터 업데이트
     new_readme = update_footer(new_readme)
 
-    with open("README.md", "w", encoding="utf-8") as f:
-        f.write(new_readme)
-
-    print(f"✅ README.md 업데이트 완료: {args.author} - {args.problem_id}")
+    # README 파일 저장
+    try:
+        with open("README.md", "w", encoding="utf-8") as f:
+            f.write(new_readme)
+        print(f"✅ README.md 업데이트 완료: {args.author} - 문제 {args.problem_id} ({args.submission_date})")
+        
+    except Exception as e:
+        print(f"❌ README.md 저장 실패: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
